@@ -197,7 +197,6 @@ def main():
     for i in range(len(semester_groups)):
         timetable[i] = []
 
-    prev_hour = None
     for rowx in range(7, sh.nrows, 3):
         row = sh.row(rowx)
         value = merged_values.get((rowx, 0), row[0])
@@ -206,9 +205,6 @@ def main():
     
         date = xlrd.xldate_as_datetime(value.value, workbook.datemode)
         hour_range = merged_values.get((rowx, 1), row[1])
-        if prev_hour == hour_range.value:
-            continue
-        prev_hour = hour_range.value
         start, end = hour_range.value.split('-')
         start_h, start_m = start.split('.')
         end_h, end_m = end.split('.')
@@ -218,6 +214,8 @@ def main():
 
         for column in range(3, len(row)):
             timetable_key = group
+            if not merged_values.get((6, column), sh.row(6)[column]).value:
+                continue
             entry = merged_values.get((rowx, column), row[column])
             entry_value = entry.value
             if entry.ctype == 3 or (entry_value and re.match(r"\d\d?.\d\d-", entry_value) and len(entry_value) <= 11):
@@ -227,12 +225,11 @@ def main():
                 cal = CalendarEntry(entry_value, date_start, date_end)
                 entry.append(cal)
                 timetable.update({timetable_key: entry})
-                group += 1    
+            group += 1    
         
     
     #TODO to be optimized
     cals = []
-    print(len(semester_groups), len(timetable.items()))
     for key, value in timetable.items():
         cal = icalendar.Calendar()
         cal.add('prodid', '-//linguin.dev//cut-calendar-ics//PL')

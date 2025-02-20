@@ -8,6 +8,7 @@ import icalendar
 import re
 from icalendar import Event, vCalAddress, vText
 
+#test
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
 

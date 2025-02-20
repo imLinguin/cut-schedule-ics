@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from collections import Counter
 import urllib.parse
 import datetime
 import requests
@@ -19,20 +20,47 @@ class CalendarEntry:
     start: datetime.datetime
     end: datetime.datetime
 
+def clean_ics():
+    for entry in os.listdir('build'):
+        if entry.endswith('.ics'):
+            os.remove(f'build/{entry}')
 
-def generate_html(cals):
+def generate_html(cals, groups):
     with open("index.html", 'r') as f:
         soup = BeautifulSoup(f, 'html.parser')
 
-        ul = soup.new_tag('ul')
-        for cal in cals:
+        ul = None
+        prev_semester = None
+        prev_degree = None
+        for group_i in range(len(groups)):
+            degree, semester, practice_group, lab_group, _identifier = groups[group_i]
+            cal = cals[group_i]
+
+            if semester != prev_semester:
+                prev_semester = semester
+                if ul:
+                    soup.body.append(ul)
+                if degree != prev_degree:
+                    prev_degree = degree
+                    h2 = soup.new_tag('h2')
+                    h2.string = degree
+                    soup.body.append(h2)
+                h3 = soup.new_tag('h3')
+                h3.string = semester
+                soup.body.append(h3)
+                ul = soup.new_tag('ul')
             li = soup.new_tag('li')
+            if practice_group.isnumeric():
+                li.string = f'Grupa ćwiczeniowa {practice_group} grupa laboratoryjna {lab_group}'
+            else:
+                li.string = f'Grupa {_identifier[:-2]}'
             a_tag = soup.new_tag('a')
             a_tag.attrs['href'] = '/' + cal
             a_tag.string = cal
             li.append(a_tag)
             ul.append(li)
-        soup.body.append(ul)
+        if ul:
+            soup.body.append(ul)
         footer = soup.new_tag("footer")
         time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
         footer.string = f"Ostatnia aktualizacja: {time}"
@@ -106,17 +134,14 @@ def GEO(sh):
 
 def main():
     os.makedirs("build", exist_ok=True)
+    clean_ics()
     load_schedule()
+    
     workbook = xlrd.open_workbook('excel.xls', formatting_info=True)
     sh = workbook.sheet_by_index(0)
     
-    tags = {
-        
-    }
-    
-    location = {
-        
-    }
+    tags = {}
+    location = {}
     
     for row in range(legenda(sh)+2, sh.nrows):
         if sh.row(row)[4].value:
@@ -144,29 +169,46 @@ def main():
                 merged_values[(row, col)] = value
 
     semester_groups = list() 
-    semesters = sh.row(5)
-    """
-    for colx in range(2, len(semesters)):
-        mapped_value = merged_values.get((5, colx), semesters[colx].value)
-        if len(mapped_value)
-    """
+    years = sh.row(5)
     groups = sh.row(6)
+
+    prev_group = None
+    lab = 0
+    group_occurences = Counter()
     for colx in range(3, len(groups)):
+        mapped_degree = merged_values.get((4, colx), sh.row(4)[colx]).value
+        mapped_year = merged_values.get((5, colx), years[colx]).value
         mapped_value = merged_values.get((6, colx), groups[colx]).value
-        if type(mapped_value) is float or len(mapped_value) == 3:
-            semester_groups.append(mapped_value)
+        if not mapped_value or not mapped_year:
+            continue
+        # Force the float
+        if type(mapped_value) is float:
+            mapped_value = str(round(mapped_value))
+        if mapped_year != prev_group:
+            lab = 0
+            prev_group = mapped_year
+        group_occurences[mapped_value] += 1
+        lab += 1
+        group_id = f'{mapped_value}-{group_occurences[mapped_value]}'
+        # degree, year, practice group, laboratory group, groupid
+        semester_groups.append((mapped_degree, mapped_year, mapped_value[1], lab, group_id))
 
     timetable = {}
+    for i in range(len(semester_groups)):
+        timetable[i] = []
 
+    prev_hour = None
     for rowx in range(7, sh.nrows, 3):
         row = sh.row(rowx)
         value = merged_values.get((rowx, 0), row[0])
         if value.ctype != 3:
             continue
-        
-        
+    
         date = xlrd.xldate_as_datetime(value.value, workbook.datemode)
         hour_range = merged_values.get((rowx, 1), row[1])
+        if prev_hour == hour_range.value:
+            continue
+        prev_hour = hour_range.value
         start, end = hour_range.value.split('-')
         start_h, start_m = start.split('.')
         end_h, end_m = end.split('.')
@@ -175,19 +217,22 @@ def main():
         group = 0
 
         for column in range(3, len(row)):
-            timetable_key = (groups[group], group)
+            timetable_key = group
             entry = merged_values.get((rowx, column), row[column])
             entry_value = entry.value
+            if entry.ctype == 3 or (entry_value and re.match(r"\d\d?.\d\d-", entry_value) and len(entry_value) <= 11):
+                continue
             if entry.ctype != 3 and entry_value:
                 entry = timetable.get(timetable_key, [])
                 cal = CalendarEntry(entry_value, date_start, date_end)
                 entry.append(cal)
                 timetable.update({timetable_key: entry})
-            group += 1    
+                group += 1    
         
     
     #TODO to be optimized
     cals = []
+    print(len(semester_groups), len(timetable.items()))
     for key, value in timetable.items():
         cal = icalendar.Calendar()
         cal.add('prodid', '-//linguin.dev//cut-calendar-ics//PL')
@@ -233,12 +278,13 @@ def main():
             cal_event.add('dtstamp', datetime.datetime.now())
             cal.add_component(cal_event)
             cal_event.add("category", handle_type(summary))
-            
-        cals.append(f'calendar-{key[1]:02}.ics')
-        with open(f'build/calendar-{key[1]:02}.ics', 'wb') as f:
+
+        group_id = semester_groups[key][4]
+        cals.append(f'calendar-{group_id}.ics')
+        with open(f'build/calendar-{group_id}.ics', 'wb') as f:
             f.write(cal.to_ical())
     
-    generate_html(cals)
+    generate_html(cals, semester_groups)
 
         
 if __name__ == "__main__":

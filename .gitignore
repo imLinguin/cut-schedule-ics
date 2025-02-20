@@ -1,4 +1,5 @@
 *.xls
 *.ics
-build
+build/*.ics
+build/*.html
 __pycache__

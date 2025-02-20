@@ -64,12 +64,22 @@ def handle_type(summary):
     elif "konsultacje" in lower_summary:
         return "konsultacje"
     
+    
+'''
+Both of the following functions take data from the Excel sheet, yet this data is incomplete and not always accurate.
+Fixing would require hard-coding this data, which is not a good idea, since it may change throughout the years.
+'''    
+    
 def legenda(sh):
     for row in range(sh.nrows-1, 0, -1):
-        #if "legenda" in sh.row(row).lower():
-        #print(sh.row(row))
         for col in range(sh.ncols):
             if "legenda" in str(sh.cell(row, col).value).lower():
+                return row
+            
+def GEO(sh):
+    for row in range(sh.nrows-1, 0, -1):
+        for col in range(sh.ncols):
+            if "sale" in str(sh.cell(row, col).value).lower():
                 print(sh.cell(row, col).value)
                 return row
 
@@ -82,10 +92,26 @@ def main():
         
     }
     
+    location = {
+        
+    }
+    
     for row in range(legenda(sh)+2, sh.nrows):
         if sh.row(row)[4].value:
-            tags[sh.row(row)[3].value] = (sh.row(row)[4].value, sh.row(row)[12].value)
+            full_name = ""
+            name = sh.row(row)[4].value.split(' ')
+            for element in name:
+                if any(character.isupper() for character in element) and "PK" not in element:
+                    full_name += element + " "
+            full_name = re.sub(r'[^\w\s-]', '', full_name.strip(), flags=re.UNICODE)
+            print(full_name)
+            tags[sh.row(row)[3].value] = (full_name, sh.row(row)[12].value)
+            
+    for row in range(GEO(sh)+1, sh.nrows):
+        if sh.row(row)[19].value:
+            location[sh.row(row)[19].value.split('-')[0].strip()] = sh.row(row)[19].value.split('-')[1].strip()
     
+    print(location)
     
     
     
@@ -158,29 +184,28 @@ def main():
             summary = event.content
             summary = re.sub(r'\s+', ' ', summary)
             
-            added = False
-            
             for tag in tags:
-                if tag in summary and not "angielski" in summary:
-                    summary = re.sub(tag, tags[tag][0], summary)
-                    summary = re.sub(r'\s+', ' ', summary)
-                    organizer = vCalAddress('MAILTO:'+tags[tag][1])
-                    organizer.params['cn'] = vText(tags[tag][0])
+        # Only process if summary does not contain "język"
+                if "język" not in summary.lower():
+                    updated = False
+                    
+                    # Check and replace in summary if the tag is found
+                    if tag in summary:
+                        summary = re.sub(tag, tags[tag][0], summary)
+                        summary = re.sub(r'\s+', ' ', summary)
+                        updated = True
 
-                    cal_event.add('organizer', organizer)
-                    added = True
-                    break
-            
-            
-            if not added:
-                for tag in tags:
-                    if tags[tag][0].lower().replace(' ','') in summary.lower().replace(' ','') and not "angielski" in summary.lower():
-                        organizer = vCalAddress('MAILTO:'+tags[tag][1])
+                    # Check and add organizer if the replacement string (or first element) is found in summary
+                    if tag[0] in summary:
+                        organizer = vCalAddress('MAILTO:' + tags[tag][1])
                         organizer.params['cn'] = vText(tags[tag][0])
-
                         cal_event.add('organizer', organizer)
+                        updated = True
+
+                    # Once either substitution or organizer update happens, break out of the loop
+                    if updated:
                         break
-            
+                        
             if "ZDALNIE" in summary.upper():
                 summary = re.sub(r'(?i)ZDALNIE', '', summary).strip()
                 SALA = "ZDALNIE"
@@ -193,6 +218,9 @@ def main():
             cal_event.add('summary', summary)
             if SALA:
                 cal_event.add('description', SALA)
+                for loc in location:
+                    if SALA in loc:
+                        cal_event.add('location', location[loc])
             cal_event.add('dtstart', event.start)
             cal_event.add('dtend', event.end)
             cal_event.add('dtstamp', datetime.datetime.now())

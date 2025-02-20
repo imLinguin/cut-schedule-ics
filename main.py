@@ -7,7 +7,6 @@ from dataclasses import dataclass
 import icalendar
 import re
 from icalendar import Event, vCalAddress, vText
-from location import location
 
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
@@ -77,12 +76,12 @@ def legenda(sh):
             if "legenda" in str(sh.cell(row, col).value).lower():
                 return row
             
-'''def GEO(sh):
+def GEO(sh):
     for row in range(sh.nrows-1, 0, -1):
         for col in range(sh.ncols):
             if "sale" in str(sh.cell(row, col).value).lower():
                 print(sh.cell(row, col).value)
-                return row'''
+                return row
 
 def main():
     load_schedule()
@@ -93,9 +92,9 @@ def main():
         
     }
     
-    '''location = {
+    location = {
         
-    }'''
+    }
     
     for row in range(legenda(sh)+2, sh.nrows):
         if sh.row(row)[4].value:
@@ -107,11 +106,11 @@ def main():
             full_name = re.sub(r'[^\w\s-]', '', full_name.strip(), flags=re.UNICODE)
             tags[sh.row(row)[3].value] = (full_name, sh.row(row)[12].value)
             
-    '''for row in range(GEO(sh)+1, sh.nrows):
+    for row in range(GEO(sh)+1, sh.nrows):
         if sh.row(row)[19].value:
             location[sh.row(row)[19].value.split('-')[0].strip()] = sh.row(row)[19].value.split('-')[1].strip()
     
-    print(location)'''
+    print(location)
     
     
     
@@ -195,13 +194,6 @@ def main():
                         summary = re.sub(r'\s+', ' ', summary)
                         updated = True
 
-                    # Check and add organizer if the replacement string (or first element) is found in summary
-                    if tag[0] in summary:
-                        organizer = vCalAddress('MAILTO:' + tags[tag][1])
-                        organizer.params['cn'] = vText(tags[tag][0])
-                        cal_event.add('organizer', organizer)
-                        updated = True
-
                     # Once either substitution or organizer update happens, break out of the loop
                     if updated:
                         break
@@ -220,8 +212,7 @@ def main():
                 cal_event.add('description', SALA)
                 for loc in location:
                     if SALA in loc:
-                        cal_event.add('geo', location[loc][0])
-                        cal_event.add('location', location[loc][1])
+                        cal_event.add('location', "Kraków" + " " + location[loc])
             cal_event.add('dtstart', event.start)
             cal_event.add('dtend', event.end)
             cal_event.add('dtstamp', datetime.datetime.now())

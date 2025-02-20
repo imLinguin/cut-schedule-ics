@@ -6,7 +6,7 @@ import xlrd
 from dataclasses import dataclass
 import icalendar
 import re
-from icalendar import Event, vCalAddress, vText
+import os
 
 #test
 
@@ -18,6 +18,27 @@ class CalendarEntry:
     content: str
     start: datetime.datetime
     end: datetime.datetime
+
+
+def generate_html(cals):
+    with open("index.html", 'r') as f:
+        soup = BeautifulSoup(f, 'html.parser')
+
+        ul = soup.new_tag('ul')
+        for cal in cals:
+            li = soup.new_tag('li')
+            a_tag = soup.new_tag('a')
+            a_tag.attrs['href'] = '/' + cal
+            a_tag.string = cal
+            li.append(a_tag)
+            ul.append(li)
+        soup.body.append(ul)
+        footer = soup.new_tag("footer")
+        time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+        footer.string = f"Ostatnia aktualizacja: {time}"
+        soup.body.append(footer)
+        with open("build/index.html", 'w') as fw:
+            fw.write(soup.prettify())
 
 def load_schedule():
     session = requests.session()
@@ -81,10 +102,10 @@ def GEO(sh):
     for row in range(sh.nrows-1, 0, -1):
         for col in range(sh.ncols):
             if "sale" in str(sh.cell(row, col).value).lower():
-                print(sh.cell(row, col).value)
                 return row
 
 def main():
+    os.makedirs("build", exist_ok=True)
     load_schedule()
     workbook = xlrd.open_workbook('excel.xls', formatting_info=True)
     sh = workbook.sheet_by_index(0)
@@ -111,10 +132,6 @@ def main():
         if sh.row(row)[19].value:
             location[sh.row(row)[19].value.split('-')[0].strip()] = sh.row(row)[19].value.split('-')[1].strip()
     
-    print(location)
-    
-    
-    
     
     mc = sh.merged_cells
 
@@ -139,12 +156,8 @@ def main():
         if type(mapped_value) is float or len(mapped_value) == 3:
             semester_groups.append(mapped_value)
 
-    
-    
     timetable = {}
 
-    
-    # TODO: change length
     for rowx in range(7, sh.nrows, 3):
         row = sh.row(rowx)
         value = merged_values.get((rowx, 0), row[0])
@@ -174,9 +187,10 @@ def main():
         
     
     #TODO to be optimized
-            
+    cals = []
     for key, value in timetable.items():
         cal = icalendar.Calendar()
+        cal.add('prodid', '-//linguin.dev//cut-calendar-ics//PL')
         cal.add('version', '2.0')
         for event in value:
             SALA = None
@@ -220,10 +234,11 @@ def main():
             cal.add_component(cal_event)
             cal_event.add("category", handle_type(summary))
             
-
-        with open(f'calendar-{key[1]}.ics', 'wb') as f:
+        cals.append(f'calendar-{key[1]}.ics')
+        with open(f'build/calendar-{key[1]}.ics', 'wb') as f:
             f.write(cal.to_ical())
-            
+    
+    generate_html(cals)
 
         
 if __name__ == "__main__":

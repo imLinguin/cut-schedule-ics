@@ -1,2 +1,4 @@
 *.xls
 *.ics
+build
+__pycache__

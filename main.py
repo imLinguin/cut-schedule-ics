@@ -12,6 +12,7 @@ import os
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
 
+
 @dataclass
 class CalendarEntry:
     content: str
@@ -197,21 +198,20 @@ def main():
             cal_event = icalendar.Event()
             summary = event.content
             summary = re.sub(r'\s+', ' ', summary)
-            
-            for tag in tags:
-        # Only process if summary does not contain "język"
-                if "język" not in summary.lower():
-                    updated = False
+        #     for tag in tags:
+        # # Only process if summary does not contain "język"
+        #         if "język" not in summary.lower():
+        #             updated = False
                     
-                    # Check and replace in summary if the tag is found
-                    if tag in summary:
-                        summary = re.sub(tag, tags[tag][0], summary)
-                        summary = re.sub(r'\s+', ' ', summary)
-                        updated = True
+        #             # Check and replace in summary if the tag is found
+        #             if tag in summary:
+        #                 summary = re.sub(tag, tags[tag][0], summary)
+        #                 summary = re.sub(r'\s+', ' ', summary)
+        #                 updated = True
 
-                    # Once either substitution or organizer update happens, break out of the loop
-                    if updated:
-                        break
+        #             # Once either substitution or organizer update happens, break out of the loop
+        #             if updated:
+        #                 break
                         
             if "ZDALNIE" in summary.upper():
                 summary = re.sub(r'(?i)ZDALNIE', '', summary).strip()

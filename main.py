@@ -5,6 +5,8 @@ import requests
 import xlrd
 from dataclasses import dataclass
 import icalendar
+import re
+from icalendar import Event, vCalAddress, vText
 
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
@@ -46,12 +48,48 @@ def load_schedule():
     excel_file = res.content
     open('excel.xls', 'wb').write(excel_file)
         
-     
+def handle_type(summary):
+    lower_summary = summary.lower()
+
+    if "wykład" in lower_summary:
+        return "wykład"
+    elif "ćwiczenia" in lower_summary:
+        return "ćwiczenia"
+    elif "laboratorium" in lower_summary:
+        return "laboratorium"
+    elif "seminarium" in lower_summary:
+        return "seminarium"
+    elif "projekt" in lower_summary:
+        return "projekt"
+    elif "konsultacje" in lower_summary:
+        return "konsultacje"
+    
+def legenda(sh):
+    for row in range(sh.nrows-1, 0, -1):
+        #if "legenda" in sh.row(row).lower():
+        #print(sh.row(row))
+        for col in range(sh.ncols):
+            if "legenda" in str(sh.cell(row, col).value).lower():
+                print(sh.cell(row, col).value)
+                return row
 
 def main():
     load_schedule()
     workbook = xlrd.open_workbook('excel.xls', formatting_info=True)
     sh = workbook.sheet_by_index(0)
+    
+    tags = {
+        
+    }
+    
+    for row in range(legenda(sh)+2, sh.nrows):
+        if sh.row(row)[4].value:
+            tags[sh.row(row)[3].value] = (sh.row(row)[4].value, sh.row(row)[12].value)
+    
+    
+    
+    
+    
     mc = sh.merged_cells
 
     # Map values for merged cells
@@ -78,12 +116,16 @@ def main():
     
     
     timetable = {}
+
+    
     # TODO: change length
     for rowx in range(7, sh.nrows, 3):
         row = sh.row(rowx)
         value = merged_values.get((rowx, 0), row[0])
         if value.ctype != 3:
             continue
+        
+        
         date = xlrd.xldate_as_datetime(value.value, workbook.datemode)
         hour_range = merged_values.get((rowx, 1), row[1])
         start, end = hour_range.value.split('-')
@@ -102,17 +144,61 @@ def main():
                 cal = CalendarEntry(entry_value, date_start, date_end)
                 entry.append(cal)
                 timetable.update({timetable_key: entry})
-            group += 1
+            group += 1    
+        
+    
+    #TODO to be optimized
+            
     for key, value in timetable.items():
         cal = icalendar.Calendar()
         cal.add('version', '2.0')
         for event in value:
+            SALA = None
             cal_event = icalendar.Event()
-            cal_event.add('summary', event.content.strip().split('\t')[0].strip())
+            summary = event.content
+            summary = re.sub(r'\s+', ' ', summary)
+            
+            added = False
+            
+            for tag in tags:
+                if tag in summary and not "angielski" in summary:
+                    summary = re.sub(tag, tags[tag][0], summary)
+                    summary = re.sub(r'\s+', ' ', summary)
+                    organizer = vCalAddress('MAILTO:'+tags[tag][1])
+                    organizer.params['cn'] = vText(tags[tag][0])
+
+                    cal_event.add('organizer', organizer)
+                    added = True
+                    break
+            
+            
+            if not added:
+                for tag in tags:
+                    if tags[tag][0].lower().replace(' ','') in summary.lower().replace(' ','') and not "angielski" in summary.lower():
+                        organizer = vCalAddress('MAILTO:'+tags[tag][1])
+                        organizer.params['cn'] = vText(tags[tag][0])
+
+                        cal_event.add('organizer', organizer)
+                        break
+            
+            if "ZDALNIE" in summary.upper():
+                summary = re.sub(r'(?i)ZDALNIE', '', summary).strip()
+                SALA = "ZDALNIE"
+                
+            elif "s." in summary:
+                pos = summary.index("s.")
+                SALA = summary[pos + len("s."):].strip().replace("s.", "")
+                summary = summary[:pos].strip()
+            
+            cal_event.add('summary', summary)
+            if SALA:
+                cal_event.add('description', SALA)
             cal_event.add('dtstart', event.start)
             cal_event.add('dtend', event.end)
             cal_event.add('dtstamp', datetime.datetime.now())
             cal.add_component(cal_event)
+            cal_event.add("category", handle_type(summary))
+            
 
         with open(f'calendar-{key[1]}.ics', 'wb') as f:
             f.write(cal.to_ical())

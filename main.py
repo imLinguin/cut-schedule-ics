@@ -12,7 +12,6 @@ import os
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
 
-
 @dataclass
 class CalendarEntry:
     content: str
@@ -192,6 +191,7 @@ def main():
         cal = icalendar.Calendar()
         cal.add('prodid', '-//linguin.dev//cut-calendar-ics//PL')
         cal.add('version', '2.0')
+        cal.add('X-WR-TIMEZONE', 'Europe/Warsaw')
         for event in value:
             SALA = None
             cal_event = icalendar.Event()
@@ -234,8 +234,8 @@ def main():
             cal.add_component(cal_event)
             cal_event.add("category", handle_type(summary))
             
-        cals.append(f'calendar-{key[1]}.ics')
-        with open(f'build/calendar-{key[1]}.ics', 'wb') as f:
+        cals.append(f'calendar-{key[1]:02}.ics')
+        with open(f'build/calendar-{key[1]:02}.ics', 'wb') as f:
             f.write(cal.to_ical())
     
     generate_html(cals)

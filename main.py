@@ -8,8 +8,8 @@ from dataclasses import dataclass
 import icalendar
 import re
 import os
+import hashlib
 
-#test
 
 WEB_PAGE = 'https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/'
 
@@ -72,6 +72,13 @@ def load_schedule():
     session = requests.session()
     res = session.get(WEB_PAGE) 
     body = res.content
+    existing_hash = None
+    if os.path.exists('excel.xls'):
+        existing_hash = hashlib.md5()
+        with open('excel.xls', 'rb') as f:
+            while data := f.read(1024):
+                existing_hash.update(data)
+            existing_hash = existing_hash.hexdigest()
 
     soup = BeautifulSoup(body, 'html.parser')
     links = soup.find_all('a')
@@ -96,6 +103,9 @@ def load_schedule():
     print('Getting', found_link)
     res = session.get(found_link, allow_redirects=True)
     excel_file = res.content
+    if existing_hash and existing_hash == hashlib.md5(excel_file).hexdigest():
+        print('Already up to date')
+        exit(1) 
     open('excel.xls', 'wb').write(excel_file)
         
 def handle_type(summary):

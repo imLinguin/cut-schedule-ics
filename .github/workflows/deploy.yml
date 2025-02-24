@@ -12,11 +12,10 @@ permissions:
   id-token: write
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      outcome: ${{ steps.generator.outcome }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Python deps
@@ -35,9 +34,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         if: ${{ steps.generator.outcome == 'success' }}
         with:
-          # Upload entire repository
           path: "build"
+     
+
+  deploy:
+    needs: build
+    if: ${{ needs.build.outputs.outcome == 'success' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to pages
-        if: ${{ steps.generator.outcome == 'success' }}
         id: deployment
         uses: actions/deploy-pages@v4

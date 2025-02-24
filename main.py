@@ -54,16 +54,32 @@ def generate_html(cals, groups):
                 li.string = f'Grupa ćwiczeniowa {practice_group} grupa laboratoryjna {lab_group}'
             else:
                 li.string = f'Grupa {_identifier[:-2]}'
+            # Create a link to download
             a_tag = soup.new_tag('a')
             a_tag.attrs['href'] = '/' + cal
             a_tag.string = cal
             li.append(a_tag)
+
+            # Create a subscription link (supported by some email clients)
+            sup_tag = soup.new_tag('sup')
+            a_tag = soup.new_tag('a')
+            a_tag.attrs['href'] = 'webcal://planpk.linguin.dev/' + cal
+            a_tag.string = 'subskrybuj'
+            sup_tag.append(a_tag)
+            li.append(sup_tag)
+
             ul.append(li)
         if ul:
             soup.body.append(ul)
         footer = soup.new_tag("footer")
         time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-        footer.string = f"Ostatnia aktualizacja: {time}"
+        p_tag = soup.new_tag('p')
+        p_tag.string = f"Ostatnia aktualizacja: {time}"
+        repo_link = soup.new_tag('a')
+        repo_link.attrs['href'] = 'https://github.com/imLinguin/cut-schedule-ics'
+        repo_link.string = 'GitHub'
+        p_tag.append(repo_link)
+        footer.append(p_tag)
         soup.body.append(footer)
         with open("build/index.html", 'w') as fw:
             fw.write(soup.prettify())
@@ -103,7 +119,7 @@ def load_schedule():
     print('Getting', found_link)
     res = session.get(found_link, allow_redirects=True)
     excel_file = res.content
-    if existing_hash and existing_hash == hashlib.md5(excel_file).hexdigest():
+    if 'CI' in os.environ and existing_hash and existing_hash == hashlib.md5(excel_file).hexdigest():
         print('Already up to date')
         exit(1) 
     open('excel.xls', 'wb').write(excel_file)

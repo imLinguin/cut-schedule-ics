@@ -23,7 +23,7 @@ jobs:
       - name: Run cache
         uses: actions/cache@v4
         with:
-          key: excel-cache
+          key: excel-cache-${{ hashFiles('main.py', 'index.html') }}
           path: excel.xls
 
       - name: Run generator script

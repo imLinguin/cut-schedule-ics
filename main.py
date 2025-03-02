@@ -122,10 +122,10 @@ def load_schedule():
     new_hash = hashlib.md5(excel_file).hexdigest()
     print(f'::notice::Cached file hash is {existing_hash}')
     print(f'::notice::Downloaded file hash is {new_hash}')
+    open('excel.xls', 'wb').write(excel_file)
     if 'CI' in os.environ and existing_hash and existing_hash == new_hash:
         print(f'::notice::Files are the same, skipping deployment')
         exit(1) 
-    open('excel.xls', 'wb').write(excel_file)
         
 def handle_type(summary):
     lower_summary = summary.lower()

@@ -119,8 +119,11 @@ def load_schedule():
     print('Getting', found_link)
     res = session.get(found_link, allow_redirects=True)
     excel_file = res.content
-    if 'CI' in os.environ and existing_hash and existing_hash == hashlib.md5(excel_file).hexdigest():
-        print('Already up to date')
+    new_hash = hashlib.md5(excel_file).hexdigest()
+    print(f'::notice::Cached file hash is {existing_hash}')
+    print(f'::notice::Downloaded file hash is {new_hash}')
+    if 'CI' in os.environ and existing_hash and existing_hash == new_hash:
+        print(f'::notice::Files are the same, skipping deployment')
         exit(1) 
     open('excel.xls', 'wb').write(excel_file)
         
@@ -160,8 +163,8 @@ def GEO(sh):
 
 def main():
     os.makedirs("build", exist_ok=True)
-    clean_ics()
     load_schedule()
+    clean_ics()
     
     workbook = xlrd.open_workbook('excel.xls', formatting_info=True)
     sh = workbook.sheet_by_index(0)

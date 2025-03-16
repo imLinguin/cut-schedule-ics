@@ -68,6 +68,15 @@ def generate_html(cals, groups):
             sup_tag.append(a_tag)
             li.append(sup_tag)
 
+            sup_tag = soup.new_tag('sup')
+            a_tag = soup.new_tag('a')
+            a_tag.attrs['href'] = '#'
+            a_tag.attrs['class'] = 'link-copy'
+            a_tag.attrs['data-cal-url'] = '/' + cal
+            a_tag.string = 'kopiuj link'
+            sup_tag.append(a_tag)
+            li.append(sup_tag)
+
             ul.append(li)
         if ul:
             soup.body.append(ul)

@@ -95,7 +95,18 @@ def generate_html(cals, groups):
 
 def load_schedule():
     session = requests.session()
-    res = session.get(WEB_PAGE) 
+    session.headers['User-Agent'] = 'Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0'
+    retry = 5
+    while retry > 0:
+        try:
+            res = session.get(WEB_PAGE)
+            break
+        except Exception: 
+            retry -= 1
+            if retry == 0:
+                raise
+            print('Retrying...')
+            continue
     body = res.content
     existing_hash = None
     if os.path.exists('excel.xls'):
@@ -244,8 +255,16 @@ def main():
         date = xlrd.xldate_as_datetime(value.value, workbook.datemode)
         hour_range = merged_values.get((rowx, 1), row[1])
         start, end = hour_range.value.split('-')
-        start_h, start_m = start.split('.')
-        end_h, end_m = end.split('.')
+        if '.' in start:
+            start_h, start_m = start.split('.')
+        else:
+            start_h, start_m = start.split(':')
+
+        if '.' in start:
+            end_h, end_m = end.split('.')
+        else:
+            end_h, end_m = end.split(':')
+
         date_start = date + datetime.timedelta(hours=int(start_h), minutes=int(start_m))
         date_end = date + datetime.timedelta(hours=int(end_h), minutes=int(end_m))
         group = 0

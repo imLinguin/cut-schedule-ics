@@ -22,9 +22,9 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements.txt
       - name: Restore cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
-          key: excel-cache-${{ github.run_id }}
+          key: excel-cache
           restore-keys: |
             excel-cache-
           path: excel.xls
@@ -33,6 +33,12 @@ jobs:
         id: generator
         run: python main.py
         continue-on-error: true
+
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          key: excel-cache-${{ hashFiles('excel.xls') }}
+          path: excel.xls
 
       - uses: actions/upload-pages-artifact@v3
         if: ${{ steps.generator.outcome == 'success' }}

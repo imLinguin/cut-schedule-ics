@@ -308,6 +308,14 @@ def main():
                         hours=int(entry_value[6:8]), minutes=int(entry_value[9:11])
                     )
                     entry_value = entry_value[13:]
+                elif re.match(r"^[0-2][0-9]:[0-5][0-9]", entry_value):
+                    date_start_temp = date + datetime.timedelta(
+                        hours=int(entry_value[:2]),
+                        minutes=int(entry_value[3:5]),  # slicing > regex
+                    )
+                    date_end = date_end + (date_start_temp - date_start)
+                    date_start = date_start_temp
+                    entry_value = entry_value[6:]
                 cal = CalendarEntry(entry_value, date_start, date_end)
                 entry.append(cal)
                 timetable.update({timetable_key: entry})

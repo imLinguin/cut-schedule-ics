@@ -49,7 +49,7 @@ jobs:
         if: ${{ steps.generator.outcome == 'success' }}
         with:
           path: "build"
-     
+
 
   deploy:
     needs: build
@@ -62,3 +62,7 @@ jobs:
       - name: Deploy to pages
         id: deployment
         uses: actions/deploy-pages@v4
+      - name: Discord webhook notification
+        run: python webhook.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

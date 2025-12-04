@@ -3,3 +3,5 @@
 build/*.ics
 build/*.html
 __pycache__
+.DS_Store
+venv/

@@ -55,10 +55,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      - name: Restore previous build
+        uses: actions/cache/restore@v4
+        with:
+          key: webhook-cache
+          restore-keys: webhook-cache-
+          path: build-old/
+
+      - uses: actions/download-artifact@v5
+        name: Download built page
+        with:
+          name: github-actions
+
+      - name: Extract latest build
+        run: |
+          tar xf artifact.tar -C build
+
       - name: Discord webhook notification
         run: python webhook.py
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Save latest page
+        uses: actions/cache/save@v4
+        with:
+          key: webhook-cache-${{ github.run_id }}
+          path: build/*.ics
   deploy:
     needs: build
     if: ${{ needs.build.outputs.outcome == 'success' }}

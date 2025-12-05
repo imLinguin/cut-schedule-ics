@@ -7,7 +7,7 @@
 
 ## Availablility
 
-The page with callendars is currently available at https://planpk.linguin.dev  
+The page with calendars is currently available at https://planpk.linguin.dev  
 An CI action runs every two hours to ensure the data is up-to date and automatically deploys updated calendars as needed
 
 ## Running locally

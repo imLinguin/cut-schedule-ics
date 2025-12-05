@@ -49,8 +49,16 @@ jobs:
         if: ${{ steps.generator.outcome == 'success' }}
         with:
           path: "build"
-
-
+  webhook:
+    needs: build
+    if: ${{ needs.build.outputs.outcome == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Discord webhook notification
+        run: python webhook.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
   deploy:
     needs: build
     if: ${{ needs.build.outputs.outcome == 'success' }}
@@ -62,7 +70,3 @@ jobs:
       - name: Deploy to pages
         id: deployment
         uses: actions/deploy-pages@v4
-      - name: Discord webhook notification
-        run: python webhook.py
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

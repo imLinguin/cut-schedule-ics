@@ -55,7 +55,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+      - name: Install Python deps
+        run: pip install -r requirements.txt
       - name: Restore previous build
         uses: actions/cache/restore@v4
         with:

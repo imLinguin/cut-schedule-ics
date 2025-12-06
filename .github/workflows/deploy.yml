@@ -66,7 +66,7 @@ jobs:
       - uses: actions/download-artifact@v5
         name: Download built page
         with:
-          name: github-actions
+          name: github-pages
 
       - name: Extract latest build
         run: |

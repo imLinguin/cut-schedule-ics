@@ -74,6 +74,7 @@ jobs:
 
       - name: Discord webhook notification
         run: python webhook.py
+        continue-on-error: true
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 

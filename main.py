@@ -1,17 +1,16 @@
-from bs4 import BeautifulSoup
 from collections import Counter
-import urllib.parse
 import datetime
-import requests
 import xlrd
 from dataclasses import dataclass
 import icalendar
 import re
 import os
-import hashlib
-
-
-WEB_PAGE = "https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/"
+from utils.legenda import legenda
+from utils.geo import GEO
+from utils.clean_ics import clean_ics
+from utils.generate_html import generate_html
+from utils.load_schedule import load_schedule
+from utils.handle_type import handle_type
 
 
 @dataclass
@@ -21,173 +20,10 @@ class CalendarEntry:
     end: datetime.datetime
 
 
-def clean_ics():
-    for entry in os.listdir("build"):
-        if entry.endswith(".ics"):
-            os.remove(f"build/{entry}")
-
-
-def generate_html(cals, groups):
-    with open("index.html", "r") as f:
-        soup = BeautifulSoup(f, "html.parser")
-
-        ul = None
-        prev_semester = None
-        prev_degree = None
-        for group_i in range(len(groups)):
-            degree, semester, practice_group, lab_group, _identifier = groups[group_i]
-            cal = cals[group_i]
-
-            if semester != prev_semester:
-                prev_semester = semester
-                if ul:
-                    soup.body.append(ul)
-                if degree != prev_degree:
-                    prev_degree = degree
-                    h2 = soup.new_tag("h2")
-                    h2.string = degree
-                    soup.body.append(h2)
-                h3 = soup.new_tag("h3")
-                h3.string = semester
-                soup.body.append(h3)
-                ul = soup.new_tag("ul")
-            li = soup.new_tag("li")
-            if practice_group.isnumeric():
-                li.string = f"Grupa ćwiczeniowa {practice_group} grupa laboratoryjna {lab_group}"
-            else:
-                li.string = f"Grupa {_identifier[:-2]}"
-            # Create a link to download
-            a_tag = soup.new_tag("a")
-            a_tag.attrs["href"] = "/" + cal
-            a_tag.string = cal
-            li.append(a_tag)
-
-            # Create a subscription link (supported by some email clients)
-            sup_tag = soup.new_tag("sup")
-            a_tag = soup.new_tag("a")
-            a_tag.attrs["href"] = "webcal://planpk.linguin.dev/" + cal
-            a_tag.string = "subskrybuj"
-            sup_tag.append(a_tag)
-            li.append(sup_tag)
-
-            sup_tag = soup.new_tag("sup")
-            a_tag = soup.new_tag("a")
-            a_tag.attrs["href"] = "#"
-            a_tag.attrs["class"] = "link-copy"
-            a_tag.attrs["data-cal-url"] = "/" + cal
-            a_tag.string = "kopiuj link"
-            sup_tag.append(a_tag)
-            li.append(sup_tag)
-
-            ul.append(li)
-        if ul:
-            soup.body.append(ul)
-        footer = soup.new_tag("footer")
-        time = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-        p_tag = soup.new_tag("p")
-        p_tag.string = f"Ostatnia aktualizacja: {time}"
-        repo_link = soup.new_tag("a")
-        repo_link.attrs["href"] = "https://github.com/imLinguin/cut-schedule-ics"
-        repo_link.string = "GitHub"
-        p_tag.append(repo_link)
-        footer.append(p_tag)
-        soup.body.append(footer)
-        with open("build/index.html", "w") as fw:
-            fw.write(soup.prettify())
-
-
-def load_schedule():
-    session = requests.session()
-    session.headers["User-Agent"] = (
-        "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0"
-    )
-    retry = 5
-    while retry > 0:
-        try:
-            res = session.get(WEB_PAGE)
-            break
-        except Exception:
-            retry -= 1
-            if retry == 0:
-                raise
-            print("Retrying...")
-            continue
-    body = res.content
-    existing_hash = None
-    if os.path.exists("excel.xls"):
-        existing_hash = hashlib.md5()
-        with open("excel.xls", "rb") as f:
-            while data := f.read(1024):
-                existing_hash.update(data)
-            existing_hash = existing_hash.hexdigest()
-
-    soup = BeautifulSoup(body, "html.parser")
-    links = soup.find_all("a")
-
-    found_link = None
-    for link in links:
-        if "Kierunek: Informatyka" in link.get_text():
-            found_link = link.get("href")
-
-    if not found_link:
-        print("Failed to get a link")
-        return
-
-    if "sharepoint.com" in found_link:
-        parsed_link = urllib.parse.urlparse(found_link)
-        query = urllib.parse.parse_qsl(parsed_link.query)
-        query.append(("download", "1"))
-        query = urllib.parse.urlencode(query)
-        parsed_link = parsed_link._replace(query=query)
-        found_link = urllib.parse.urlunparse(parsed_link)
-
-    print("Getting", found_link)
-    res = session.get(found_link, allow_redirects=True)
-    excel_file = res.content
-    new_hash = hashlib.md5(excel_file).hexdigest()
-    print(f"::notice::Cached file hash is {existing_hash}")
-    print(f"::notice::Downloaded file hash is {new_hash}")
-    open("excel.xls", "wb").write(excel_file)
-    if "CI" in os.environ and existing_hash and existing_hash == new_hash:
-        print(f"::notice::Files are the same, skipping deployment")
-        exit(1)
-
-
-def handle_type(summary):
-    lower_summary = summary.lower()
-
-    if "wykład" in lower_summary:
-        return "wykład"
-    elif "ćwiczenia" in lower_summary:
-        return "ćwiczenia"
-    elif "laboratorium" in lower_summary:
-        return "laboratorium"
-    elif "seminarium" in lower_summary:
-        return "seminarium"
-    elif "projekt" in lower_summary:
-        return "projekt"
-    elif "konsultacje" in lower_summary:
-        return "konsultacje"
-
-
 """
 Both of the following functions take data from the Excel sheet, yet this data is incomplete and not always accurate.
 Fixing would require hard-coding this data, which is not a good idea, since it may change throughout the years.
 """
-
-
-def legenda(sh):
-    for row in range(sh.nrows - 1, 0, -1):
-        for col in range(sh.ncols):
-            if "legenda" in str(sh.cell(row, col).value).lower():
-                return row
-
-
-def GEO(sh):
-    for row in range(sh.nrows - 1, 0, -1):
-        for col in range(sh.ncols):
-            if "sale" in str(sh.cell(row, col).value).lower():
-                return row
 
 
 def main():
@@ -201,10 +37,14 @@ def main():
     tags = {}
     location = {}
 
-    for row in range(legenda(sh) + 2, sh.nrows):
+    leg = legenda(sh)
+
+    assert leg is not None
+
+    for row in range(leg + 2, sh.nrows):
         if sh.row(row)[4].value:
             full_name = ""
-            name = sh.row(row)[4].value.split(" ")
+            name = str(sh.row(row)[4].value).split(" ")
             for element in name:
                 if (
                     any(character.isupper() for character in element)
@@ -214,10 +54,14 @@ def main():
             full_name = re.sub(r"[^\w\s-]", "", full_name.strip(), flags=re.UNICODE)
             tags[sh.row(row)[3].value] = (full_name, sh.row(row)[12].value)
 
-    for row in range(GEO(sh) + 1, sh.nrows):
+    ge = GEO(sh)
+
+    assert ge is not None
+
+    for row in range(ge + 1, sh.nrows):
         if sh.row(row)[19].value:
-            location[sh.row(row)[19].value.split("-")[0].strip()] = (
-                sh.row(row)[19].value.split("-")[1].strip()
+            location[str(sh.row(row)[19].value).split("-")[0].strip()] = (
+                str(sh.row(row)[19].value).split("-")[1].strip()
             )
 
     mc = sh.merged_cells

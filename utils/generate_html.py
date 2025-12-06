@@ -1,6 +1,5 @@
 from bs4 import BeautifulSoup
 import datetime
-from dataclasses import dataclass
 
 
 def generate_html(cals, groups):
@@ -56,7 +55,9 @@ def generate_html(cals, groups):
             sup_tag.append(a_tag)
             li.append(sup_tag)
             if ul is None:
-                raise RuntimeError("Expected HTML to contain a <ul> element")
+                raise RuntimeError(
+                    "Unexpected state: ul element not initialized. This may indicate that the groups list is empty or semester data is missing."
+                )
             ul.append(li)
         if ul:
             soup.body.append(ul)

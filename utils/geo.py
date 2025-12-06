@@ -3,3 +3,4 @@ def GEO(sh):
         for col in range(sh.ncols):
             if "sale" in str(sh.cell(row, col).value).lower():
                 return row
+    return None

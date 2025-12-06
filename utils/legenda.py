@@ -3,3 +3,4 @@ def legenda(sh):
         for col in range(sh.ncols):
             if "legenda" in str(sh.cell(row, col).value).lower():
                 return row
+    return None

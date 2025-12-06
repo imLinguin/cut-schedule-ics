@@ -177,6 +177,8 @@ def main():
             cal_event = icalendar.Event()
             summary = event.content
             summary = re.sub(r"\s+", " ", summary)
+            if "BRAK ZAJĘĆ" in summary:
+                continue
             #     for tag in tags:
             # # Only process if summary does not contain "język"
             #         if "język" not in summary.lower():

@@ -61,6 +61,8 @@ jobs:
           cache: 'pip'
       - name: Install Python deps
         run: pip install -r requirements.txt
+
+      - run: mkdir build-old
       - name: Restore previous build
         uses: actions/cache/restore@v4
         with:

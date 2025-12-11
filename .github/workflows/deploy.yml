@@ -64,9 +64,9 @@ jobs:
       - name: Restore previous build
         uses: actions/cache/restore@v4
         with:
-          key: webhook-cache
+          key: webhook-cache-${{ github.run_id }}
           restore-keys: |
-            webhook-cache
+            webhook-cache-
           path: build-old/
 
       - uses: actions/download-artifact@v5

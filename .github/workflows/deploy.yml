@@ -65,7 +65,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           key: webhook-cache
-          restore-keys: webhook-cache-
+          restore-keys: |
+            webhook-cache-
           path: build-old/
 
       - uses: actions/download-artifact@v5

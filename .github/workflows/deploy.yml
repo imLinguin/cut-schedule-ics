@@ -62,14 +62,13 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements.txt
 
-      - run: mkdir build-old
       - name: Restore previous build
         uses: actions/cache/restore@v4
         with:
           key: webhook-cache-${{ github.run_id }}
           restore-keys: |
             webhook-cache-
-          path: build-old/
+          path: build-old
 
       - uses: actions/download-artifact@v5
         name: Download built page
@@ -90,7 +89,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           key: webhook-cache-${{ github.run_id }}
-          path: build/*.ics
+          path: build
   deploy:
     needs: build
     if: ${{ needs.build.outputs.outcome == 'success' }}

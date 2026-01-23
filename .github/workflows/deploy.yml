@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     outputs:
       outcome: ${{ steps.generator.outcome }}
     steps:
@@ -52,7 +52,7 @@ jobs:
   webhook:
     needs: build
     if: ${{ needs.build.outputs.outcome == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -93,7 +93,7 @@ jobs:
   deploy:
     needs: build
     if: ${{ needs.build.outputs.outcome == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

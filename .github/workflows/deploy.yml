@@ -18,7 +18,7 @@ jobs:
     outputs:
       outcome: ${{ steps.generator.outcome }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
@@ -26,7 +26,7 @@ jobs:
       - name: Install Python deps
         run: pip install -r requirements.txt
       - name: Restore cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           key: excel-cache
           restore-keys: |
@@ -40,12 +40,12 @@ jobs:
 
       - name: Save cache
         if: ${{ steps.generator.outcome == 'success' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           key: excel-cache-${{ hashFiles('excel.xls') }}
           path: excel.xls
 
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         if: ${{ steps.generator.outcome == 'success' }}
         with:
           path: "build"
@@ -54,7 +54,7 @@ jobs:
     if: ${{ needs.build.outputs.outcome == 'success' }}
     runs-on: ubuntu-slim
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
@@ -100,4 +100,4 @@ jobs:
     steps:
       - name: Deploy to pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

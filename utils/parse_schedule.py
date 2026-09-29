@@ -19,12 +19,13 @@ Layout of the Excel exported by FK Planer (plan-ns/download.php):
 - Below the table there is a legend listing every subject name.
 """
 
+# Excel activity letter -> (event title prefix, category)
 ACTIVITIES = {
-    "W": ("W", "wykład"),
-    "C": ("Ć", "ćwiczenia"),
-    "L": ("L", "laboratorium"),
-    "P": ("P", "projekt"),
-    "S": ("S", "seminarium"),
+    "W": ("WYKŁAD", "wykład"),
+    "C": ("ĆW", "ćwiczenia"),
+    "L": ("LAB", "laboratorium"),
+    "P": ("PROJEKT", "projekt"),
+    "S": ("SEMINARIUM", "seminarium"),
 }
 
 DAY_HEADER = re.compile(r"^\S+ · (Z\d+)$")

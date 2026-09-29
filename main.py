@@ -32,6 +32,13 @@ def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
     cal.add("version", "2.0")
     cal.add("X-WR-CALNAME", f"PK {rubric.year} {rubric.label}")
     cal.add("X-WR-TIMEZONE", "Europe/Warsaw")
+    # Hint for clients that support it (Apple, Outlook), Google ignores it
+    cal.add(
+        "REFRESH-INTERVAL",
+        icalendar.vDuration(datetime.timedelta(hours=1)),
+        parameters={"VALUE": "DURATION"},
+    )
+    cal.add("X-PUBLISHED-TTL", "PT1H")
     if rubric.events:
         first = min(event.start for event in rubric.events).date()
         last = max(event.end for event in rubric.events).date()
@@ -44,8 +51,8 @@ def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
         )
     now = datetime.datetime.now(datetime.timezone.utc)
     for event in sorted(rubric.events, key=lambda e: (e.start, e.subject)):
-        short, category = ACTIVITIES.get(event.activity, (event.activity, None))
-        summary = f"{event.subject} ({short})" if short else event.subject
+        prefix, category = ACTIVITIES.get(event.activity, (event.activity, None))
+        summary = f"{prefix} {event.subject}" if prefix else event.subject
         # Stable UID so calendar apps update events instead of duplicating them
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"
         uid = hashlib.sha1(uid_source.encode()).hexdigest()
@@ -72,9 +79,18 @@ def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
     return cal
 
 
+def set_output(name: str, value: str):
+    # Step output read by the workflow, ignored when running locally
+    if "GITHUB_OUTPUT" in os.environ:
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"{name}={value}\n")
+
+
 def main():
     os.makedirs("build", exist_ok=True)
-    load_schedule()
+    if not load_schedule():
+        set_output("changed", "false")
+        return
     clean_ics()
 
     rubrics = parse_schedule(EXCEL_FILE)
@@ -98,6 +114,7 @@ def main():
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
     generate_html(manifest)
+    set_output("changed", "true")
 
 
 if __name__ == "__main__":

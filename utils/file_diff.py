@@ -1,4 +1,18 @@
+import re
+
 from icalendar import Calendar
+
+# Titles used to be "Grafika komputerowa (W)", now they are "WYKŁAD Grafika komputerowa".
+# Old builds are translated so a format change is not reported as every event changing.
+OLD_TITLE = re.compile(r"^(?P<subject>.+) \((?P<short>[WĆLPS])\)$")
+OLD_PREFIXES = {"W": "WYKŁAD", "Ć": "ĆW", "L": "LAB", "P": "PROJEKT", "S": "SEMINARIUM"}
+
+
+def _normalize_summary(summary: str) -> str:
+    match = OLD_TITLE.match(summary)
+    if not match:
+        return summary
+    return f"{OLD_PREFIXES[match['short']]} {match['subject']}"
 
 
 def _event_context(event):
@@ -30,7 +44,7 @@ def ics_read(file: str):
             start_time = event["DTSTART"].dt.time()
             end_time = event["DTEND"].dt.time()
             extracted = {
-                "summary": summary_text or "",
+                "summary": _normalize_summary(summary_text or ""),
                 "date": str(event["DTSTART"].dt.date()),
                 "start": start_time.strftime("%H:%M"),
                 "end": end_time.strftime("%H:%M"),
@@ -47,9 +61,13 @@ def ics_read(file: str):
 
 
 def _group_by_summary_date(events: list):
+    # The same subject can occur more than once a day, number those occurrences
     grouped = {}
-    for event in events:
-        grouped[(event["summary"], event["date"])] = event
+    for event in sorted(events, key=lambda e: (e["date"], e["start"])):
+        occurrence = 0
+        while (event["summary"], event["date"], occurrence) in grouped:
+            occurrence += 1
+        grouped[(event["summary"], event["date"], occurrence)] = event
     return grouped
 
 

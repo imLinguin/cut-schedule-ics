@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-slim
     outputs:
-      outcome: ${{ steps.generator.outcome }}
+      changed: ${{ steps.generator.outputs.changed }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -36,22 +36,23 @@ jobs:
       - name: Run generator script
         id: generator
         run: python main.py
-        continue-on-error: true
+        env:
+          FORCE_DEPLOY: ${{ github.event_name != 'schedule' }}
 
       - name: Save cache
-        if: ${{ steps.generator.outcome == 'success' }}
+        if: ${{ steps.generator.outputs.changed == 'true' }}
         uses: actions/cache/save@v5
         with:
           key: plan-xlsx-cache-${{ hashFiles('plan.xlsx') }}
           path: plan.xlsx
 
       - uses: actions/upload-pages-artifact@v5
-        if: ${{ steps.generator.outcome == 'success' }}
+        if: ${{ steps.generator.outputs.changed == 'true' }}
         with:
           path: "build"
   webhook:
     needs: build
-    if: ${{ needs.build.outputs.outcome == 'success' }}
+    if: ${{ needs.build.outputs.changed == 'true' }}
     runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v6
@@ -92,7 +93,7 @@ jobs:
           path: build
   deploy:
     needs: build
-    if: ${{ needs.build.outputs.outcome == 'success' }}
+    if: ${{ needs.build.outputs.changed == 'true' }}
     runs-on: ubuntu-slim
     environment:
       name: github-pages

@@ -6,8 +6,8 @@ import requests
 
 BUILD_DIR = "build"
 OLD_BUILD_DIR = "build-old"
-# Only calendars whose file name starts with this are reported (I stopień, rok 3, sem 5)
-TARGET_PREFIX = os.environ.get("WEBHOOK_TARGET_PREFIX", "i-rok-3-sem-5-")
+# Only calendars whose file name starts with this are reported (I stopień, rok 3, both semesters)
+TARGET_PREFIX = os.environ.get("WEBHOOK_TARGET_PREFIX", "i-rok-3-")
 
 
 def has_old_build_content(directory: str = OLD_BUILD_DIR) -> bool:

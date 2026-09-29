@@ -1,6 +1,5 @@
 import hashlib
 import os
-import sys
 
 import requests
 
@@ -39,7 +38,8 @@ def _file_hash(path):
         return hashlib.md5(f.read()).hexdigest()
 
 
-def load_schedule():
+def load_schedule() -> bool:
+    """Downloads the Excel, returns False when CI should skip the deployment."""
     existing_hash = _file_hash(EXCEL_FILE)
 
     print("Getting", EXCEL_URL)
@@ -53,9 +53,12 @@ def load_schedule():
     print(f"::notice::Downloaded file hash is {new_hash}")
     with open(EXCEL_FILE, "wb") as f:
         f.write(excel_file)
-    if "CI" in os.environ and existing_hash and existing_hash == new_hash:
+    # Pushes and manual runs always deploy, so code changes go live right away
+    forced = os.environ.get("FORCE_DEPLOY") == "true"
+    if "CI" in os.environ and not forced and existing_hash == new_hash:
         print("::notice::Files are the same, skipping deployment")
-        sys.exit(1)
+        return False
+    return True
 
 
 def load_room_campuses() -> dict:

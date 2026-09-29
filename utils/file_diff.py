@@ -34,7 +34,8 @@ def ics_read(file: str):
                 "date": str(event["DTSTART"].dt.date()),
                 "start": start_time.strftime("%H:%M"),
                 "end": end_time.strftime("%H:%M"),
-                "room": str(event.get("DESCRIPTION") or ""),
+                # "L1, al. Jana Pawła II 37, Kraków" -> "L1"
+                "room": str(event.get("LOCATION") or "").split(",")[0],
             }
         except Exception as exc:
             context = _event_context(event)
@@ -99,7 +100,7 @@ def file_diff(old_file: str, new_file: str):
     matched_added_keys = set()
     for key in _sorted_keys(added_keys):
         summary = key[0]
-        if not removed_by_summary[summary]:
+        if not removed_by_summary.get(summary):
             continue
         old_key = removed_by_summary[summary].pop(0)
         matched_removed_keys.add(old_key)

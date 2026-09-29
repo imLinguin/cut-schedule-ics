@@ -3,12 +3,16 @@
 </p>
 
 <h1 align="center">cut-schedule-ics</h1>
-<p align="center">Parser for xls formatted schedule at Cracow Univiersity of Technology (CUT)</p>
+<p align="center">Parser for the part-time (niestacjonarne) Computer Science schedule at Cracow Univiersity of Technology (CUT)</p>
 
 ## Availablility
 
 The page with calendars is currently available at https://planpk.linguin.dev  
 An CI action runs every two hours to ensure the data is up-to date and automatically deploys updated calendars as needed
+
+The data comes from the Excel export of [FK Planer](https://ii.pk.edu.pl/~fkruzel/fk-planer-lti/public/plan-ns/).
+Every column of that sheet (e.g. `GL1`, `Programowanie na platformie .NET K01`) becomes a separate calendar,
+so everyone can subscribe to their base group plus the elective groups they are enrolled in.
 
 ## Running locally
 
@@ -19,18 +23,14 @@ It is recommended to use a venv and run the code in there
 
 Currently used dependencies:
 
-- BeautifulSoup4
-  - Arch: python-beautifulsoup4
-  - Ubuntu: python3-bs4
-  - Fedora: python3-beautifulsoup4
 - requests
   - Arch: python-requests
   - Ubuntu: python3-requests
   - Fedora: python3-requests
-- xlrd
-  - Arch: python-xlrd
-  - Ubuntu: python3-xlrd
-  - Fedora: python3-xlrd
+- openpyxl
+  - Arch: python-openpyxl
+  - Ubuntu: python3-openpyxl
+  - Fedora: python3-openpyxl
 - icalendar
   - Arch - python-icalendar
   - Ubuntu - python3-icalendar

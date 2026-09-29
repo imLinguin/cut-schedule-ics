@@ -8,30 +8,166 @@
     <title>Plan PK</title>
     <script defer src="index.js"></script>
     <style>
-      body {
-        margin: 0 auto;
-        max-width: 80rem;
-        padding: 0 10px;
-      }
-      sup {
-        padding: 5px;
-      }
-      footer {
-        font-weight: bolder;
+      :root {
+        --bg: #f4f6f7;
+        --card: #ffffff;
+        --text: #1d2a2d;
+        --muted: #5b6b6f;
+        --border: #d9e0e2;
+        --accent: #1f6feb;
+        --accent-text: #ffffff;
+        --button: #e8edef;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          background: #2d3d40;
-          color: rgb(255, 255, 255);
+          --bg: #22302f;
+          --card: #2d3d40;
+          --text: #f1f5f5;
+          --muted: #a9b8ba;
+          --border: #3d5155;
+          --accent: #82c4ff;
+          --accent-text: #0e2233;
+          --button: #3a4d51;
         }
-        a {
-          color: #82c4ff;
-        }
+      }
+      body {
+        margin: 0 auto;
+        max-width: 64rem;
+        padding: 1rem 16px 2rem;
+        line-height: 1.45;
+      }
+      h1 {
+        margin: 0.5rem 0 0.25rem;
+      }
+      h2 {
+        margin: 2rem 0 0.75rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      .intro {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+      }
+      .intro p {
+        margin: 0.4rem 0;
+      }
+      .intro ol {
+        margin: 0.4rem 0;
+        padding-left: 1.25rem;
+      }
+      details.year {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin: 0.5rem 0;
+      }
+      details.year > summary {
+        cursor: pointer;
+        padding: 0.75rem 1rem;
+        font-weight: 600;
+        font-size: 1.1rem;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      details.year > summary .count {
+        color: var(--muted);
+        font-weight: 400;
+        font-size: 0.9rem;
+      }
+      .year-body {
+        padding: 0 1rem 1rem;
+      }
+      h4 {
+        margin: 0.75rem 0 0.5rem;
+        color: var(--muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .subject-name {
+        margin: 0.75rem 0 0.4rem;
+        font-weight: 600;
+      }
+      ul.cals {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+        gap: 0.5rem;
+      }
+      li.cal {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      li.cal .name {
+        font-weight: 600;
+      }
+      .actions {
+        display: flex;
+        gap: 0.3rem;
+        flex-wrap: wrap;
+      }
+      .btn {
+        font-size: 0.8rem;
+        padding: 0.25rem 0.55rem;
+        border-radius: 6px;
+        text-decoration: none;
+        background: var(--button);
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-text);
+      }
+      footer {
+        margin-top: 2rem;
+        color: var(--muted);
+        font-size: 0.9rem;
       }
     </style>
   </head>
   <body>
     <h1>Plan PK</h1>
-    <!-- PLACEHOLDER --->
+    <section class="intro">
+      <p>
+        Informatyka, studia niestacjonarne. Każda rubryka z planu to osobny kalendarz,
+        więc wybierasz tylko to, co Cię dotyczy:
+      </p>
+      <ol>
+        <li>swoją grupę podstawową (GL),</li>
+        <li>grupy przedmiotów wybieralnych (K/P/Ć), na które jesteś zapisany.</li>
+      </ol>
+      <p>
+        Wspólne wykłady są w kalendarzach GL, a wykłady przedmiotów wybieralnych
+        w ich kalendarzach, więc nic się nie dubluje.
+      </p>
+      <p>
+        Google Kalendarz: <b>Kopiuj link</b> → Inne kalendarze → <b>+</b> → Z adresu URL.
+        Kalendarze aktualizują się same, gdy zmieni się plan.
+      </p>
+    </section>
+    <!-- CALENDARS -->
+    <footer>
+      <p>
+        Ostatnia aktualizacja: <!-- UPDATED --> ·
+        <a href="https://ii.pk.edu.pl/~fkruzel/fk-planer-lti/public/plan-ns/">Źródło</a> ·
+        <a href="https://github.com/imLinguin/cut-schedule-ics">GitHub</a>
+      </p>
+    </footer>
   </body>
 </html>

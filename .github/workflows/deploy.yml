@@ -28,10 +28,10 @@ jobs:
       - name: Restore cache
         uses: actions/cache/restore@v5
         with:
-          key: excel-cache
+          key: plan-xlsx-cache
           restore-keys: |
-            excel-cache-
-          path: excel.xls
+            plan-xlsx-cache-
+          path: plan.xlsx
 
       - name: Run generator script
         id: generator
@@ -42,8 +42,8 @@ jobs:
         if: ${{ steps.generator.outcome == 'success' }}
         uses: actions/cache/save@v5
         with:
-          key: excel-cache-${{ hashFiles('excel.xls') }}
-          path: excel.xls
+          key: plan-xlsx-cache-${{ hashFiles('plan.xlsx') }}
+          path: plan.xlsx
 
       - uses: actions/upload-pages-artifact@v5
         if: ${{ steps.generator.outcome == 'success' }}

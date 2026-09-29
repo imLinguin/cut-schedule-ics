@@ -5,3 +5,5 @@ build/*.html
 __pycache__
 .DS_Store
 venv/
+*.xlsx
+build/calendars.json

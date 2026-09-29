@@ -1,66 +1,80 @@
-from bs4 import BeautifulSoup
-import requests
-import urllib.parse
-import os
 import hashlib
+import os
+import sys
 
-WEB_PAGE = "https://it.pk.edu.pl/studenci/na-studiach/rozklady-zajec/"
+import requests
+
+PLAN_URL = "https://ii.pk.edu.pl/~fkruzel/fk-planer-lti/public/plan-ns/"
+EXCEL_URL = PLAN_URL + "download.php"
+SNAPSHOT_URL = PLAN_URL + "snapshot.php"
+EXCEL_FILE = "plan.xlsx"
 
 
-def load_schedule():
+def _session():
     session = requests.session()
     session.headers["User-Agent"] = (
         "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0"
     )
+    return session
+
+
+def _get(session, url):
     retry = 5
-    while retry > 0:
+    while True:
         try:
-            res = session.get(WEB_PAGE)
-            break
+            res = session.get(url, allow_redirects=True, timeout=60)
+            res.raise_for_status()
+            return res
         except Exception:
             retry -= 1
             if retry == 0:
                 raise
             print("Retrying...")
-            continue
-    body = res.content
-    existing_hash = None
-    if os.path.exists("excel.xls"):
-        existing_hash = hashlib.md5()
-        with open("excel.xls", "rb") as f:
-            while data := f.read(1024):
-                existing_hash.update(data)
-            existing_hash = existing_hash.hexdigest()
 
-    soup = BeautifulSoup(body, "html.parser")
-    links = soup.find_all("a")
 
-    found_link = None
-    for link in links:
-        if "Kierunek: Informatyka" in link.get_text():
-            found_link = link.get("href")
+def _file_hash(path):
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return hashlib.md5(f.read()).hexdigest()
 
-    if not found_link:
-        print("Failed to get a link")
-        return
 
-    if "sharepoint.com" in str(found_link):
-        parsed_link = urllib.parse.urlparse(str(found_link))
-        query = urllib.parse.parse_qsl(parsed_link.query)
-        query.append(("download", "1"))
-        query = urllib.parse.urlencode(query)
-        parsed_link = parsed_link._replace(query=query)
-        found_link = urllib.parse.urlunparse(parsed_link)
+def load_schedule():
+    existing_hash = _file_hash(EXCEL_FILE)
 
-    print("Getting", found_link)
-    url = str(found_link)
-    res = session.get(url, allow_redirects=True)
-    excel_file = res.content
+    print("Getting", EXCEL_URL)
+    excel_file = _get(_session(), EXCEL_URL).content
+    # xlsx is a zip archive, anything else is an error page
+    if not excel_file.startswith(b"PK"):
+        raise RuntimeError(f"{EXCEL_URL} did not return an xlsx file")
+
     new_hash = hashlib.md5(excel_file).hexdigest()
     print(f"::notice::Cached file hash is {existing_hash}")
     print(f"::notice::Downloaded file hash is {new_hash}")
-    with open("excel.xls", "wb") as f:
+    with open(EXCEL_FILE, "wb") as f:
         f.write(excel_file)
     if "CI" in os.environ and existing_hash and existing_hash == new_hash:
-        print(f"::notice::Files are the same, skipping deployment")
-        exit(1)
+        print("::notice::Files are the same, skipping deployment")
+        sys.exit(1)
+
+
+def load_room_campuses() -> dict:
+    """
+    Maps room codes used in the Excel to campus names.
+    The Excel itself only has the short room code, so this is best effort.
+    """
+    try:
+        state = _get(_session(), SNAPSHOT_URL).json()["state"]
+    except Exception as exc:
+        print(f"::warning::Failed to load room list: {exc}")
+        return {}
+    campuses = {}
+    for room in state.get("rooms", []):
+        campuses[room["code"]] = room["campus"]
+    for block in state.get("blocks", []):
+        if block.get("room") and block.get("campus"):
+            campuses.setdefault(block["room"], block["campus"])
+    # The planner displays this room as S1 in the export
+    if "SEMINARYJNA" in campuses:
+        campuses.setdefault("S1", campuses["SEMINARYJNA"])
+    return campuses

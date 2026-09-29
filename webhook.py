@@ -18,7 +18,9 @@ def has_old_build_content(directory: str = OLD_BUILD_DIR) -> bool:
 
 
 if not has_old_build_content():
-    raise SystemExit("old build folder missing or empty")
+    # Happens on the first run after the cache expires, the next run will have it
+    print("::notice::old build folder missing or empty, nothing to compare")
+    raise SystemExit(0)
 
 
 def load_calendars(directory: str = BUILD_DIR) -> list:
@@ -42,7 +44,7 @@ def dir_compare(calendars: list, old_dir: str = OLD_BUILD_DIR, new_dir: str = BU
         except Exception as exc:
             raise RuntimeError(f"failed to diff {old_path} vs {new_path}") from exc
         if diff:
-            changes.append({"label": calendar["label"], "diffs": diff})
+            changes.append({"label": f"{calendar['year']} · {calendar['label']}", "diffs": diff})
     return changes
 
 

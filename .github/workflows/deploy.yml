@@ -86,11 +86,16 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      - name: Save latest page  
+      # The cache version depends on the path, so it has to be saved under the
+      # same path it is restored to, otherwise the restore never finds it
+      - name: Prepare latest page for cache
+        run: rm -rf build-old && cp -r build build-old
+
+      - name: Save latest page
         uses: actions/cache/save@v5
         with:
           key: webhook-cache-${{ hashFiles('build/**') }}
-          path: build
+          path: build-old
   deploy:
     needs: build
     if: ${{ needs.build.outputs.changed == 'true' }}

@@ -1,6 +1,7 @@
 import datetime
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass, field
 
 import openpyxl
@@ -17,6 +18,12 @@ Layout of the Excel exported by FK Planer (plan-ns/download.php):
 - Events are (merged) cells in the form "Subject ACT[ · groups]\nTeacher\nHH:MM–HH:MM ROOM".
   A cell merged across columns belongs to every rubric it covers.
 - Below the table there is a legend listing every subject name.
+
+Rubric kinds:
+- base: groups of a year (GL1, "DS GL1")
+- elective: an elective subject group ("Programowanie na platformie .NET K01")
+- language: a language group ("JEZYK J1" columns, and "Język obcy" groups which the
+  Excel puts in GL columns but which students pick on their own)
 """
 
 # Excel activity letter -> (event title prefix, category)
@@ -32,6 +39,10 @@ DAY_HEADER = re.compile(r"^\S+ · (Z\d+)$")
 DATE = re.compile(r"^(\d\d)\.(\d\d)\s+(\d{4})$")
 TIME = re.compile(r"^(\d\d):(\d\d)[–-](\d\d):(\d\d)(?: (.*))?$")
 TITLE = re.compile(r"^(?P<subject>.+?) (?P<activity>[WCLPS])(?:(?: ·)? (?P<groups>.+))?$")
+ELECTIVE = re.compile(r"^(?P<subject>.+) (?P<group>[KPĆ]\d+)$")
+LANGUAGE_COLUMN = re.compile(r"\b(?P<group>J\d+)$")
+BASE_GROUP = re.compile(r"\bGL\d+$")
+LANGUAGE_SUBJECT = re.compile(r"^Język obcy\b")
 
 
 @dataclass
@@ -52,6 +63,9 @@ class Rubric:
     year: str
     label: str
     slug: str
+    kind: str = "base"
+    subject: str = None
+    group: str = None
     events: list = field(default_factory=list)
 
 
@@ -130,6 +144,36 @@ def _parse_title(title: str, subjects: list):
     return title, "", ""
 
 
+def _split_languages(rubrics: list) -> list:
+    """Moves "Język obcy" groups out of GL calendars into their own calendars."""
+    languages = {}
+    for rubric in rubrics:
+        if rubric.kind != "base":
+            continue
+        kept = []
+        for event in rubric.events:
+            if not LANGUAGE_SUBJECT.match(event.subject):
+                kept.append(event)
+                continue
+            key = (rubric.degree, rubric.year, event.subject, event.groups)
+            if key not in languages:
+                label = f"{event.subject} {event.groups}".strip()
+                languages[key] = Rubric(
+                    rubric.degree,
+                    rubric.year,
+                    label,
+                    slugify(f"{rubric.degree} {rubric.year} {label}"),
+                    kind="language",
+                    subject=event.subject,
+                    group=event.groups,
+                )
+            # The same cell can span several GL columns
+            if not any(event is known for known in languages[key].events):
+                languages[key].events.append(event)
+        rubric.events = kept
+    return list(languages.values())
+
+
 def parse_schedule(path: str) -> list:
     wb = openpyxl.load_workbook(path)
     ws = wb.worksheets[0]
@@ -169,6 +213,12 @@ def parse_schedule(path: str) -> list:
                 slug_label = label.split(" ", 1)[1]
             slug = slugify(f"{degree} {year} {slug_label}")
             rubric = Rubric(degree, year, label, slug)
+            elective = ELECTIVE.match(label)
+            language = LANGUAGE_COLUMN.search(label)
+            if elective:
+                rubric.kind, rubric.subject, rubric.group = "elective", elective["subject"], elective["group"]
+            elif language:
+                rubric.kind, rubric.group = "language", language["group"]
             rubrics.append(rubric)
             column_rubrics[col] = rubric
 
@@ -197,6 +247,16 @@ def parse_schedule(path: str) -> list:
                         )
                     h1, m1, h2, m2 = map(int, time_match.groups()[:4])
                     subject, activity, groups = _parse_title(lines[0], subjects)
+                    _, first_col, last_col = merged.get((row, col), (row, col, col))
+                    event_rubrics = [
+                        column_rubrics[event_col]
+                        for event_col in range(first_col, last_col + 1)
+                        if event_col in column_rubrics
+                    ]
+                    # II stopień cells have no group for labs and projects, the column says it
+                    column_groups = [BASE_GROUP.search(r.label) for r in event_rubrics]
+                    if not groups and activity != "W" and column_groups and all(column_groups):
+                        groups = "+".join(match[0] for match in column_groups)
                     event = Event(
                         subject=subject,
                         activity=activity,
@@ -207,10 +267,14 @@ def parse_schedule(path: str) -> list:
                         end=date + datetime.timedelta(hours=h2, minutes=m2),
                         weekend=weekend,
                     )
-                    _, first_col, last_col = merged.get((row, col), (row, col, col))
-                    for event_col in range(first_col, last_col + 1):
-                        if event_col in column_rubrics:
-                            column_rubrics[event_col].events.append(event)
+                    for rubric in event_rubrics:
+                        rubric.events.append(event)
+
+    rubrics += _split_languages(rubrics)
+    for rubric in rubrics:
+        if rubric.kind == "language" and not rubric.subject and rubric.events:
+            subjects_used = Counter(event.subject for event in rubric.events)
+            rubric.subject = subjects_used.most_common(1)[0][0]
 
     slugs = [rubric.slug for rubric in rubrics]
     duplicates = {slug for slug in slugs if slugs.count(slug) > 1}

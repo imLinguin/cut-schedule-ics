@@ -12,6 +12,7 @@ from utils.load_schedule import EXCEL_FILE, load_rooms, load_schedule
 from utils.parse_schedule import ACTIVITIES, parse_schedule
 
 TIMEZONE = ZoneInfo("Europe/Warsaw")
+TEACHERS_FILE = os.path.join(os.path.dirname(__file__), "data", "teachers.json")
 CAMPUS_ADDRESSES = {
     "Czyżyny": "al. Jana Pawła II 37, Kraków",
     "Warszawska": "ul. Warszawska 24, Kraków",
@@ -36,8 +37,28 @@ def room_description(room: str, rooms: dict) -> str:
     return f"{text}, kampus {campus}" if campus and campus not in text else text
 
 
-def event_description(rubric, event, rooms: dict) -> str:
-    lines = [f"Prowadzący: {event.teacher}"]
+def load_teachers() -> dict:
+    # Academic titles from the faculty staff list, see scripts/update_teachers.py
+    with open(TEACHERS_FILE) as f:
+        teachers = json.load(f)
+    return {frozenset(name.lower().split()): entry for name, entry in teachers.items()}
+
+
+def teacher_names(teacher: str, teachers: dict) -> str:
+    """ "Białas Jerzy / Skabek Krzysztof" -> "dr inż. Białas Jerzy / Skabek Krzysztof" """
+    names = []
+    for name in teacher.split(" / "):
+        name = name.strip()
+        # The plan mixes "Surname Name" and "Name Surname", so match word sets
+        entry = teachers.get(frozenset(name.lower().replace("–", "-").split()))
+        if entry:
+            name = f"{entry['title']} {name}" + (f", {entry['suffix']}" if entry.get("suffix") else "")
+        names.append(name)
+    return " / ".join(names)
+
+
+def event_description(rubric, event, rooms: dict, teachers: dict) -> str:
+    lines = [f"Prowadzący: {teacher_names(event.teacher, teachers)}"]
     if event.groups:
         lines.append(f"Grupa: {event.groups}")
     lines.append(f"Sala: {room_description(event.room, rooms)}")
@@ -46,7 +67,7 @@ def event_description(rubric, event, rooms: dict) -> str:
     return "\n".join(lines)
 
 
-def build_calendar(rubric, rooms: dict) -> icalendar.Calendar:
+def build_calendar(rubric, rooms: dict, teachers: dict) -> icalendar.Calendar:
     cal = icalendar.Calendar()
     cal.add("prodid", "-//linguin.dev//cut-calendar-ics//PL")
     cal.add("version", "2.0")
@@ -75,6 +96,8 @@ def build_calendar(rubric, rooms: dict) -> icalendar.Calendar:
         # "LAB GL2: Podstawy sieci komputerowych", group exactly as written in the plan
         marker = " ".join(part for part in (prefix, event.groups) if part)
         summary = f"{marker}: {event.subject}" if marker else event.subject
+        if event.room == "ONLINE":
+            summary = f"ONLINE: {summary}"
         # Stable UID so calendar apps update events instead of duplicating them
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"
         uid = hashlib.sha1(uid_source.encode()).hexdigest()
@@ -85,7 +108,7 @@ def build_calendar(rubric, rooms: dict) -> icalendar.Calendar:
         cal_event.add("dtstart", event.start.replace(tzinfo=TIMEZONE))
         cal_event.add("dtend", event.end.replace(tzinfo=TIMEZONE))
         cal_event.add("dtstamp", now)
-        cal_event.add("description", event_description(rubric, event, rooms))
+        cal_event.add("description", event_description(rubric, event, rooms, teachers))
         # Format independent identity of the event, used by the webhook diff
         cal_event.add("X-PK-KEY", f"{prefix} {event.subject}")
         location = event_location(event.room, rooms)
@@ -113,18 +136,24 @@ def main():
 
     rubrics = parse_schedule(EXCEL_FILE)
     rooms = load_rooms()
+    teachers = load_teachers()
 
     manifest = []
     for rubric in rubrics:
         file_name = f"{rubric.slug}.ics"
         with open(f"build/{file_name}", "wb") as f:
-            f.write(build_calendar(rubric, rooms).to_ical())
+            f.write(build_calendar(rubric, rooms, teachers).to_ical())
         manifest.append(
             {
                 "file": file_name,
                 "degree": rubric.degree,
                 "year": rubric.year,
                 "label": rubric.label,
+                "kind": rubric.kind,
+                "subject": rubric.subject,
+                "group": rubric.group,
+                # Shown next to language groups, so people can pick their teacher
+                "teachers": sorted({teacher_names(e.teacher, teachers) for e in rubric.events}),
             }
         )
 

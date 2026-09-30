@@ -62,3 +62,11 @@ python main.py
 ```
 
 The `build/` directory will contain all necessary files for hosting
+
+Academic titles of teachers are not in the plan, they are stored in `data/teachers.json`
+(from the [PK staff directory](https://spispracownikow.pk.edu.pl)).
+When new teachers appear in the plan, refresh it with
+
+```
+python scripts/update_teachers.py
+```

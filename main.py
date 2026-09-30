@@ -13,6 +13,7 @@ from utils.parse_schedule import ACTIVITIES, parse_schedule
 
 TIMEZONE = ZoneInfo("Europe/Warsaw")
 TEACHERS_FILE = os.path.join(os.path.dirname(__file__), "data", "teachers.json")
+COMBOS_FILE = os.path.join(os.path.dirname(__file__), "data", "combos.json")
 CAMPUS_ADDRESSES = {
     "Czyżyny": "al. Jana Pawła II 37, Kraków",
     "Warszawska": "ul. Warszawska 24, Kraków",
@@ -67,11 +68,11 @@ def event_description(rubric, event, rooms: dict, teachers: dict) -> str:
     return "\n".join(lines)
 
 
-def build_calendar(rubric, rooms: dict, teachers: dict) -> icalendar.Calendar:
+def new_calendar(name: str, events: list) -> icalendar.Calendar:
     cal = icalendar.Calendar()
     cal.add("prodid", "-//linguin.dev//cut-calendar-ics//PL")
     cal.add("version", "2.0")
-    cal.add("X-WR-CALNAME", f"PK {rubric.year} {rubric.label}")
+    cal.add("X-WR-CALNAME", name)
     cal.add("X-WR-TIMEZONE", "Europe/Warsaw")
     # Hint for clients that support it (Apple, Outlook), Google ignores it
     cal.add(
@@ -80,9 +81,9 @@ def build_calendar(rubric, rooms: dict, teachers: dict) -> icalendar.Calendar:
         parameters={"VALUE": "DURATION"},
     )
     cal.add("X-PUBLISHED-TTL", "PT1H")
-    if rubric.events:
-        first = min(event.start for event in rubric.events).date()
-        last = max(event.end for event in rubric.events).date()
+    if events:
+        first = min(event["DTSTART"].dt for event in events).date()
+        last = max(event["DTEND"].dt for event in events).date()
         cal.add_component(
             icalendar.Timezone.from_tzid(
                 "Europe/Warsaw",
@@ -90,14 +91,21 @@ def build_calendar(rubric, rooms: dict, teachers: dict) -> icalendar.Calendar:
                 last_date=last + datetime.timedelta(days=366),
             )
         )
+    for event in sorted(events, key=lambda e: (e["DTSTART"].dt, str(e["SUMMARY"]))):
+        cal.add_component(event)
+    return cal
+
+
+def calendar_events(rubric, rooms: dict, teachers: dict) -> list:
     now = datetime.datetime.now(datetime.timezone.utc)
-    for event in sorted(rubric.events, key=lambda e: (e.start, e.subject)):
+    events = []
+    for event in rubric.events:
         prefix, category = ACTIVITIES.get(event.activity, (event.activity, None))
         # "LAB GL2: Podstawy sieci komputerowych", group exactly as written in the plan
         marker = " ".join(part for part in (prefix, event.groups) if part)
         summary = f"{marker}: {event.subject}" if marker else event.subject
         if event.room == "ONLINE":
-            summary = f"ONLINE: {summary}"
+            summary = f"ONLINE – {summary}"
         # Stable UID so calendar apps update events instead of duplicating them
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"
         uid = hashlib.sha1(uid_source.encode()).hexdigest()
@@ -116,8 +124,29 @@ def build_calendar(rubric, rooms: dict, teachers: dict) -> icalendar.Calendar:
             cal_event.add("location", location)
         if category:
             cal_event.add("categories", [category])
-        cal.add_component(cal_event)
-    return cal
+        events.append(cal_event)
+    return events
+
+
+def build_combos(events_by_slug: dict):
+    """
+    Hidden calendars that are just the sum of existing ones, see data/combos.json.
+    They are not listed on the page nor in calendars.json, so the webhook skips them.
+    """
+    with open(COMBOS_FILE) as f:
+        combos = json.load(f)
+    for name, parts in combos.items():
+        events = {}
+        for slug in parts:
+            if slug not in events_by_slug:
+                # Keep publishing the rest instead of failing every calendar
+                print(f"::warning::Combo {name}: calendar {slug} no longer exists")
+                continue
+            for event in events_by_slug[slug]:
+                key = (event["DTSTART"].dt, event["DTEND"].dt, str(event["X-PK-KEY"]))
+                events.setdefault(key, event)
+        with open(f"build/{name}.ics", "wb") as f:
+            f.write(new_calendar(f"PK {name}", list(events.values())).to_ical())
 
 
 def set_output(name: str, value: str):
@@ -139,10 +168,13 @@ def main():
     teachers = load_teachers()
 
     manifest = []
+    events_by_slug = {}
     for rubric in rubrics:
         file_name = f"{rubric.slug}.ics"
+        events = calendar_events(rubric, rooms, teachers)
+        events_by_slug[rubric.slug] = events
         with open(f"build/{file_name}", "wb") as f:
-            f.write(build_calendar(rubric, rooms, teachers).to_ical())
+            f.write(new_calendar(f"PK {rubric.year} {rubric.label}", events).to_ical())
         manifest.append(
             {
                 "file": file_name,
@@ -156,6 +188,8 @@ def main():
                 "teachers": sorted({teacher_names(e.teacher, teachers) for e in rubric.events}),
             }
         )
+
+    build_combos(events_by_slug)
 
     with open("build/calendars.json", "w") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)

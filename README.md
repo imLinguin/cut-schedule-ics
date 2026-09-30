@@ -70,3 +70,6 @@ When new teachers appear in the plan, refresh it with
 ```
 python scripts/update_teachers.py
 ```
+
+`data/combos.json` defines hidden calendars that are the sum of existing ones
+(e.g. `gomberman.ics`). They are not listed on the page and have no webhook notifications.

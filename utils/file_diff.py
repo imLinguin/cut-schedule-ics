@@ -2,8 +2,9 @@ import re
 
 from icalendar import Calendar
 
-# Titles used to be "Grafika komputerowa (W)", now they are "WYKŁAD Grafika komputerowa".
-# Old builds are translated so a format change is not reported as every event changing.
+# Events are matched by X-PK-KEY ("WYKŁAD Grafika komputerowa"), which does not depend on
+# how the title is formatted. Builds from before X-PK-KEY had titles like
+# "Grafika komputerowa (W)" or "WYKŁAD Grafika komputerowa", those are translated.
 OLD_TITLE = re.compile(r"^(?P<subject>.+) \((?P<short>[WĆLPS])\)$")
 OLD_PREFIXES = {"W": "WYKŁAD", "Ć": "ĆW", "L": "LAB", "P": "PROJEKT", "S": "SEMINARIUM"}
 
@@ -44,7 +45,8 @@ def ics_read(file: str):
             start_time = event["DTSTART"].dt.time()
             end_time = event["DTEND"].dt.time()
             extracted = {
-                "summary": _normalize_summary(summary_text or ""),
+                "key": str(event.get("X-PK-KEY") or _normalize_summary(summary_text or "")),
+                "summary": summary_text or "",
                 "date": str(event["DTSTART"].dt.date()),
                 "start": start_time.strftime("%H:%M"),
                 "end": end_time.strftime("%H:%M"),
@@ -65,9 +67,9 @@ def _group_by_summary_date(events: list):
     grouped = {}
     for event in sorted(events, key=lambda e: (e["date"], e["start"])):
         occurrence = 0
-        while (event["summary"], event["date"], occurrence) in grouped:
+        while (event["key"], event["date"], occurrence) in grouped:
             occurrence += 1
-        grouped[(event["summary"], event["date"], occurrence)] = event
+        grouped[(event["key"], event["date"], occurrence)] = event
     return grouped
 
 

@@ -61,9 +61,9 @@ def load_schedule() -> bool:
     return True
 
 
-def load_room_campuses() -> dict:
+def load_rooms() -> dict:
     """
-    Maps room codes used in the Excel to campus names.
+    Maps room codes used in the Excel to {"campus": ..., "name": ...}.
     The Excel itself only has the short room code, so this is best effort.
     """
     try:
@@ -71,13 +71,13 @@ def load_room_campuses() -> dict:
     except Exception as exc:
         print(f"::warning::Failed to load room list: {exc}")
         return {}
-    campuses = {}
+    rooms = {}
     for room in state.get("rooms", []):
-        campuses[room["code"]] = room["campus"]
+        rooms[room["code"]] = {"campus": room.get("campus"), "name": room.get("name")}
     for block in state.get("blocks", []):
         if block.get("room") and block.get("campus"):
-            campuses.setdefault(block["room"], block["campus"])
+            rooms.setdefault(block["room"], {"campus": block["campus"], "name": None})
     # The planner displays this room as S1 in the export
-    if "SEMINARYJNA" in campuses:
-        campuses.setdefault("S1", campuses["SEMINARYJNA"])
-    return campuses
+    if "SEMINARYJNA" in rooms:
+        rooms.setdefault("S1", rooms["SEMINARYJNA"])
+    return rooms

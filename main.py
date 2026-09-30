@@ -8,7 +8,7 @@ import icalendar
 
 from utils.clean_ics import clean_ics
 from utils.generate_html import generate_html
-from utils.load_schedule import EXCEL_FILE, load_room_campuses, load_schedule
+from utils.load_schedule import EXCEL_FILE, load_rooms, load_schedule
 from utils.parse_schedule import ACTIVITIES, parse_schedule
 
 TIMEZONE = ZoneInfo("Europe/Warsaw")
@@ -18,15 +18,35 @@ CAMPUS_ADDRESSES = {
 }
 
 
-def event_location(room: str, campuses: dict) -> str:
+def event_location(room: str, rooms: dict) -> str:
     if not room or room == "ONLINE":
         return "Online" if room else ""
-    campus = campuses.get(room)
+    campus = rooms.get(room, {}).get("campus")
     address = CAMPUS_ADDRESSES.get(campus, campus)
     return f"{room}, {address}" if address else room
 
 
-def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
+def room_description(room: str, rooms: dict) -> str:
+    if room == "ONLINE":
+        return "online (zdalnie)"
+    info = rooms.get(room, {})
+    name, campus = info.get("name"), info.get("campus")
+    # Planner names look like "L4 - 136 (GPU)", keep the code the Excel uses in front
+    text = name if name and name.startswith(room) else f"{room} ({name})" if name else room
+    return f"{text}, kampus {campus}" if campus and campus not in text else text
+
+
+def event_description(rubric, event, rooms: dict) -> str:
+    lines = [f"Prowadzący: {event.teacher}"]
+    if event.groups:
+        lines.append(f"Grupa: {event.groups}")
+    lines.append(f"Sala: {room_description(event.room, rooms)}")
+    lines.append(f"Zjazd: {event.weekend}")
+    lines.append(f"Kalendarz: {rubric.year} · {rubric.label}")
+    return "\n".join(lines)
+
+
+def build_calendar(rubric, rooms: dict) -> icalendar.Calendar:
     cal = icalendar.Calendar()
     cal.add("prodid", "-//linguin.dev//cut-calendar-ics//PL")
     cal.add("version", "2.0")
@@ -52,16 +72,12 @@ def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
     now = datetime.datetime.now(datetime.timezone.utc)
     for event in sorted(rubric.events, key=lambda e: (e.start, e.subject)):
         prefix, category = ACTIVITIES.get(event.activity, (event.activity, None))
-        summary = f"{prefix} {event.subject}" if prefix else event.subject
+        # "LAB GL2: Podstawy sieci komputerowych", group exactly as written in the plan
+        marker = " ".join(part for part in (prefix, event.groups) if part)
+        summary = f"{marker}: {event.subject}" if marker else event.subject
         # Stable UID so calendar apps update events instead of duplicating them
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"
         uid = hashlib.sha1(uid_source.encode()).hexdigest()
-
-        description = [event.teacher]
-        if event.groups:
-            description.append(f"Grupy: {event.groups}")
-        description.append(f"Sala: {event.room}")
-        description.append(f"Zjazd {event.weekend}")
 
         cal_event = icalendar.Event()
         cal_event.add("uid", f"{uid}@planpk.linguin.dev")
@@ -69,8 +85,10 @@ def build_calendar(rubric, campuses: dict) -> icalendar.Calendar:
         cal_event.add("dtstart", event.start.replace(tzinfo=TIMEZONE))
         cal_event.add("dtend", event.end.replace(tzinfo=TIMEZONE))
         cal_event.add("dtstamp", now)
-        cal_event.add("description", "\n".join(description))
-        location = event_location(event.room, campuses)
+        cal_event.add("description", event_description(rubric, event, rooms))
+        # Format independent identity of the event, used by the webhook diff
+        cal_event.add("X-PK-KEY", f"{prefix} {event.subject}")
+        location = event_location(event.room, rooms)
         if location:
             cal_event.add("location", location)
         if category:
@@ -94,13 +112,13 @@ def main():
     clean_ics()
 
     rubrics = parse_schedule(EXCEL_FILE)
-    campuses = load_room_campuses()
+    rooms = load_rooms()
 
     manifest = []
     for rubric in rubrics:
         file_name = f"{rubric.slug}.ics"
         with open(f"build/{file_name}", "wb") as f:
-            f.write(build_calendar(rubric, campuses).to_ical())
+            f.write(build_calendar(rubric, rooms).to_ical())
         manifest.append(
             {
                 "file": file_name,

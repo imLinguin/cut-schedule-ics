@@ -160,10 +160,10 @@ def restore_state():
     token = os.environ["GITHUB_TOKEN"]
     with _session() as session:
         session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
-        page, latest_deployment, saw_managed_deployment = 1, 0, False
+        page, latest_deployment, saw_managed_deployment = 1, "", False
+        candidates = []
         while True:
             artifacts = _get(session, f"https://api.github.com/repos/{repo}/actions/artifacts?per_page=100&page={page}").json()["artifacts"]
-            candidates = []
             for item in artifacts:
                 run = item.get("workflow_run", {})
                 if run.get("head_branch") != "main":
@@ -171,27 +171,29 @@ def restore_state():
                 if run.get("head_repository_id") != run.get("repository_id"):
                     continue
                 if item["name"] == "github-pages" or item["name"].startswith("github-pages-"):
-                    latest_deployment = max(latest_deployment, item["id"])
+                    latest_deployment = max(latest_deployment, item["created_at"])
                     saw_managed_deployment |= item["name"].startswith("github-pages-")
                 if not item["name"].startswith("sync-state-"):
                     continue
                 candidates.append(item)
-            if candidates:
-                newest = max(candidates, key=lambda item: (item["created_at"], item["id"]))
-                if newest["expired"]:
-                    raise RuntimeError("Synchronization checkpoint expired; recover it before continuing")
-                content = _get(session, newest["archive_download_url"]).content
-                _extract_state(content, STATE_DIR)
-                set_output("bootstrap", "false")
-                # A Pages artifact newer than the completed checkpoint means a
-                # deployment may have happened without a notification/checkpoint.
-                # Republish even if the source reverted to the checkpoint's plan.
-                set_output("force_deploy", str(latest_deployment > newest["id"]).lower())
-                summary("Odtworzono ostatni zakończony stan synchronizacji.")
-                return
             if len(artifacts) < 100:
                 break
             page += 1
+        # Artifact IDs and API page order are NOT chronological. Read all pages
+        # and compare creation times, including deployment attempts on later pages.
+        if candidates:
+            newest = max(candidates, key=lambda item: (item["created_at"], item["id"]))
+            if newest["expired"]:
+                raise RuntimeError("Synchronization checkpoint expired; recover it before continuing")
+            content = _get(session, newest["archive_download_url"]).content
+            _extract_state(content, STATE_DIR)
+            set_output("bootstrap", "false")
+            # An equally/newer dated Pages artifact may represent an unfinished
+            # sync. Republish even if the source reverted to the checkpoint's plan.
+            # Equal timestamps are ambiguous, so conservatively republish.
+            set_output("force_deploy", str(latest_deployment >= newest["created_at"]).lower())
+            summary("Odtworzono ostatni zakończony stan synchronizacji.")
+            return
     if saw_managed_deployment:
         raise RuntimeError("Missing checkpoint after an attempted deployment; recover it before continuing")
     # First migration only: persist this baseline BEFORE deploying anything, so

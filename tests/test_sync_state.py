@@ -1,3 +1,4 @@
+import datetime
 import io
 import json
 import os
@@ -26,8 +27,9 @@ def archive_bytes(include_calendar=True):
     return stream.getvalue()
 
 
-def artifact(name, identity=1, expired=False, branch="main"):
-    return {"name": name, "id": identity, "created_at": "2026-09-01T00:00:00Z",
+def artifact(name, identity=1, expired=False, branch="main", created_at=None):
+    timestamp = datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc) + datetime.timedelta(seconds=identity)
+    return {"name": name, "id": identity, "created_at": created_at or timestamp.isoformat(),
             "expired": expired, "archive_download_url": "https://example.test/archive",
             "workflow_run": {"head_branch": branch, "head_repository_id": 1, "repository_id": 1}}
 
@@ -120,6 +122,52 @@ class StateTests(unittest.TestCase):
         os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
         restore_state()
         self.assertIn("page=2", get.call_args_list[1].args[1])
+        self.assertIn("force_deploy=true", Path("outputs.txt").read_text())
+
+    @patch("utils.sync_state._get")
+    def test_real_nonchronological_ids_do_not_force_republish(self, get):
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": [
+            artifact("sync-state-initial-1-1", 11166667104, created_at="2026-10-01T13:36:04Z"),
+            artifact("github-pages-1-1", 11166577244, created_at="2026-10-01T13:36:16Z"),
+            artifact("sync-state-1-1", 11166232317, created_at="2026-10-01T13:36:26Z"),
+        ]})), Mock(content=archive_bytes())]
+        os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
+        restore_state()
+        self.assertIn("force_deploy=false", Path("outputs.txt").read_text())
+
+    @patch("utils.sync_state._get")
+    def test_newer_deploy_with_lower_id_still_forces_republish(self, get):
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": [
+            artifact("sync-state-1-1", 200, created_at="2026-10-01T13:36:26Z"),
+            artifact("github-pages-2-1", 100, created_at="2026-10-01T13:38:26Z"),
+        ]})), Mock(content=archive_bytes())]
+        os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
+        restore_state()
+        self.assertIn("force_deploy=true", Path("outputs.txt").read_text())
+
+    @patch("utils.sync_state._get")
+    def test_newest_checkpoint_and_deploy_can_be_on_later_api_pages(self, get):
+        old = artifact("sync-state-1-1", 200, created_at="2026-10-01T13:30:00Z")
+        newer = artifact("sync-state-2-1", 100, created_at="2026-10-01T13:36:00Z")
+        newer["archive_download_url"] = "https://example.test/newest"
+        deploy = artifact("github-pages-3-1", 50, created_at="2026-10-01T13:38:00Z")
+        first_page = [old] + [artifact("unrelated", i) for i in range(201, 300)]
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": first_page})),
+                           Mock(json=Mock(return_value={"artifacts": [newer, deploy]})),
+                           Mock(content=archive_bytes())]
+        os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
+        restore_state()
+        self.assertEqual("https://example.test/newest", get.call_args.args[1])
+        self.assertIn("force_deploy=true", Path("outputs.txt").read_text())
+
+    @patch("utils.sync_state._get")
+    def test_equal_timestamps_conservatively_republish(self, get):
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": [
+            artifact("sync-state-1-1", 200, created_at="2026-10-01T13:36:26Z"),
+            artifact("github-pages-2-1", 100, created_at="2026-10-01T13:36:26Z"),
+        ]})), Mock(content=archive_bytes())]
+        os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
+        restore_state()
         self.assertIn("force_deploy=true", Path("outputs.txt").read_text())
 
     def test_candidate_snapshot_does_not_overwrite_completed_state(self):

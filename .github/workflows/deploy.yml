@@ -4,19 +4,29 @@ on:
   push:
     branches: "main"
   schedule:
-    - cron: "0 */2 * 1-6,9-12 *"
+    - cron: "17 */2 * 1-6,9-12 *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
+concurrency:
+  group: calendar-pages-sync
+  cancel-in-progress: false
+
 jobs:
-  build:
+  sync:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-slim
-    outputs:
-      changed: ${{ steps.generator.outputs.changed }}
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      SYNC_STATE_DIR: sync-state
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -25,99 +35,81 @@ jobs:
           cache: 'pip'
       - name: Install Python deps
         run: pip install -r requirements.txt
-      - name: Restore cache
-        uses: actions/cache/restore@v5
-        with:
-          key: plan-xlsx-cache
-          restore-keys: |
-            plan-xlsx-cache-
-          path: plan.xlsx
+      - name: Regression tests (offline and localhost only)
+        run: python -m unittest discover -s tests -v
 
-      - name: Run generator script
+      - name: Restore last completed synchronization
+        id: previous
+        run: python -m utils.sync_state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      # Bootstrap must be durable before the first deployment/notification too.
+      - name: Preserve initial published baseline
+        if: ${{ steps.previous.outputs.bootstrap == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-state-initial-${{ github.run_id }}-${{ github.run_attempt }}
+          path: sync-state/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Generate and validate calendars
         id: generator
         run: python main.py
         env:
-          FORCE_DEPLOY: ${{ github.event_name != 'schedule' }}
-
-      - name: Save cache
-        if: ${{ steps.generator.outputs.changed == 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          key: plan-xlsx-cache-${{ hashFiles('plan.xlsx') }}
-          path: plan.xlsx
+          FORCE_DEPLOY: ${{ steps.previous.outputs.force_deploy }}
 
       - uses: actions/upload-pages-artifact@v5
         if: ${{ steps.generator.outputs.changed == 'true' }}
         with:
-          path: "build"
-  webhook:
-    needs: build
-    if: ${{ needs.build.outputs.changed == 'true' }}
-    runs-on: ubuntu-slim
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build
+          # Also a marker of an attempted deploy, including one whose Discord
+          # step failed. Keep it as long as the completed checkpoint.
+          retention-days: 90
+      - name: Deploy to pages
+        id: deployment
+        if: ${{ steps.generator.outputs.changed == 'true' }}
+        uses: actions/deploy-pages@v5
         with:
-          python-version: '3.13'
-          cache: 'pip'
-      - name: Install Python deps
-        run: pip install -r requirements.txt
-
-      - name: Restore previous build
-        uses: actions/cache/restore@v5
-        with:
-          key: webhook-cache-latest
-          restore-keys: |
-            webhook-cache-
-          path: build-old
-
-      - uses: actions/download-artifact@v5
-        name: Download built page
-        with:
-          name: github-pages
-
-      - name: Extract latest build
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Report deployment
+        env:
+          CHANGED: ${{ steps.generator.outputs.changed }}
         run: |
-          tar xf artifact.tar -C build
+          if [ "$CHANGED" = true ]; then
+            echo 'Publikacja GitHub Pages zakończona.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Publikacja pominięta: treść nie zmieniła się.' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: Discord webhook notification
+      - name: Discord notification (after successful deployment)
         run: python webhook.py
-        continue-on-error: true
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
-      # The cache version depends on the path, so it has to be saved under the
-      # same path it is restored to, otherwise the restore never finds it
-      - name: Prepare latest page for cache
-        run: rm -rf build-old && cp -r build build-old
-
-      - name: Save latest page
-        uses: actions/cache/save@v5
+      # A checkpoint means BOTH publication and notification completed. Never
+      # advance it on failure. Refresh also on unchanged runs to survive summer.
+      - name: Save completed synchronization
+        uses: actions/upload-artifact@v4
         with:
-          key: webhook-cache-${{ hashFiles('build/**') }}
-          path: build-old
-  deploy:
-    needs: build
-    if: ${{ needs.build.outputs.changed == 'true' }}
-    runs-on: ubuntu-slim
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to pages
-        id: deployment
-        uses: actions/deploy-pages@v5
-  # GitHub disables scheduled workflows after 60 days without repository activity.
-  # Re-enabling the workflow through the API resets that counter.
+          name: sync-state-${{ github.run_id }}-${{ github.run_attempt }}
+          path: next-state/
+          retention-days: 90
+          if-no-files-found: error
+
+  # Best effort only: this is not independent monitoring of scheduled execution.
   keepalive:
-    if: ${{ github.event_name != 'push' }}
+    if: ${{ github.event_name != 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-slim
+    timeout-minutes: 2
     permissions:
       actions: write
     steps:
       - name: Keep the schedule enabled
         run: >
-          curl --fail-with-body --silent --show-error --request PUT
+          curl --fail-with-body --silent --show-error --max-time 30 --request PUT
           --header "Authorization: Bearer $GH_TOKEN"
           --header "Accept: application/vnd.github+json"
           "https://api.github.com/repos/${{ github.repository }}/actions/workflows/deploy.yml/enable"

@@ -22,7 +22,9 @@ def _subject_lists(calendars: list, with_teachers: bool = False) -> str:
     by_subject = {}
     for calendar in calendars:
         note = ", ".join(calendar["teachers"]) if with_teachers else ""
-        by_subject.setdefault(calendar["subject"], []).append(
+        # A new language column may exist before its first class is allocated.
+        subject = calendar["subject"] or "Język obcy"
+        by_subject.setdefault(subject, []).append(
             _calendar_item(calendar["group"], calendar["file"], note)
         )
     body = ""

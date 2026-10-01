@@ -8,7 +8,8 @@
 ## Availablility
 
 The page with calendars is currently available at https://planpk.linguin.dev  
-An CI action runs every two hours to ensure the data is up-to date and automatically deploys updated calendars as needed
+A CI action checks the plan every two hours at minute 17 (UTC), except in July and August,
+and deploys when calendar contents or the page change. GitHub may delay scheduled runs.
 
 The data comes from the Excel export of [FK Planer](https://ii.pk.edu.pl/~fkruzel/fk-planer-lti/public/plan-ns/).
 Every column of that sheet (e.g. `GL1`, `Programowanie na platformie .NET K01`) becomes a separate calendar,
@@ -73,3 +74,45 @@ python scripts/update_teachers.py
 
 `data/combos.json` defines hidden calendars that are the sum of existing ones
 (e.g. `gomberman.ics`). They are not listed on the page and have no webhook notifications.
+If a source group is removed, its events disappear from these combined calendars;
+the combined calendar URLs remain unchanged, even when no groups remain.
+
+## Synchronization and recovery
+
+The workflow serializes runs and executes generation, validation, Pages deployment,
+and Discord notification in that order. A `sync-state-*` Actions artifact records the
+last completed synchronization, including its calendars. It is refreshed on every
+successful check with 90-day retention, including checks without timetable changes.
+The first run downloads the existing published calendars and saves that baseline
+before any deployment. It cannot reconstruct notifications lost before this migration.
+
+A failed deploy or notification leaves the previous checkpoint intact, so a later run
+retries against it even if the Excel is unchanged. Discord failures turn the run red.
+The Pages artifact is retained for the same period: if it is newer than the completed
+checkpoint, the next run republishes even if the source has reverted to its old contents.
+An uncertain HTTP result or failure saving the checkpoint can cause a repeated message;
+delivery is not exactly-once. Intermediate source edits between checks are not an audit log.
+Do not delete the checkpoint artifacts: an expired, incomplete or corrupt checkpoint
+stops the run. Missing checkpoints also stop it if an artifact from this workflow's
+deployment is still present. If all synchronization and deployment artifacts are lost,
+the workflow cannot distinguish that from first installation and initializes from the site.
+
+Removing a group removes its public link and ICS file and notifies Discord for **any year**.
+Normal event changes still notify only I stopień, year 3. Removed calendar subscriptions
+may retain old events in client apps after their URL disappears. Surviving filenames
+and the two combined-calendar URLs stay unchanged. A renamed source column is treated
+as a removed group plus a new one; intentional renames need an explicit code mapping
+if the old URL must be kept.
+
+Malformed input, duplicate UIDs, invalid times, an entirely empty plan, or a surviving
+calendar unexpectedly losing all events stops publication. Removing a group does not.
+The workflow summary reports checks and completed steps; it is not an independent
+monitor for GitHub's scheduler. Check Actions after the summer break, especially if
+GitHub has disabled scheduling due to repository inactivity.
+
+Run the regression tests without external services or a real Discord webhook.
+Transport tests briefly bind an HTTP server to `127.0.0.1` on a random free port:
+
+```sh
+python -m unittest discover -s tests -v
+```

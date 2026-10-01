@@ -204,6 +204,8 @@ def parse_schedule(path: str) -> list:
         for col in range(start + 2, end + 1):
             year = _text(_merged_value(ws, merged, year_row, col))
             label = _text(ws.cell(header_row, col).value)
+            if label and not year:
+                raise RuntimeError(f"Missing year above calendar column {col}")
             if not label or not year:
                 continue
             year = re.sub(r"^ROK\b", "Rok", year)
@@ -225,7 +227,13 @@ def parse_schedule(path: str) -> list:
         # Walk the days of this section
         for i, day_row in enumerate(day_rows):
             next_day = day_rows[i + 1] if i + 1 < len(day_rows) else legend_row
-            weekend = DAY_HEADER.match(_text(ws.cell(day_row, start).value)).group(1)
+            day_match = DAY_HEADER.match(_text(ws.cell(day_row, start).value))
+            if not day_match:
+                raise RuntimeError(f"Missing day header at row {day_row}, column {start}")
+            weekend = day_match.group(1)
+            for col in range(start + 2, end + 1):
+                if _text(ws.cell(day_row, col).value) != _text(ws.cell(header_row, col).value):
+                    raise RuntimeError(f"Changed calendar header at {ws.cell(day_row, col).coordinate}")
             date_match = DATE.match(_text(ws.cell(day_row + 1, start).value))
             if not date_match:
                 raise RuntimeError(f"Missing date below row {day_row}")
@@ -237,8 +245,10 @@ def parse_schedule(path: str) -> list:
                     if (row, col) in covered:
                         continue
                     value = ws.cell(row, col).value
-                    if not isinstance(value, str) or not value.strip():
+                    if value is None or (isinstance(value, str) and not value.strip()):
                         continue
+                    if not isinstance(value, str):
+                        raise RuntimeError(f"Unexpected non-text cell {ws.cell(row, col).coordinate}")
                     lines = [line.strip() for line in value.strip().split("\n")]
                     time_match = TIME.match(lines[-1])
                     if not time_match:
@@ -246,6 +256,10 @@ def parse_schedule(path: str) -> list:
                             f"Unexpected cell {ws.cell(row, col).coordinate}: {value!r}"
                         )
                     h1, m1, h2, m2 = map(int, time_match.groups()[:4])
+                    if not (0 <= h1 < 24 and 0 <= h2 < 24 and 0 <= m1 < 60 and 0 <= m2 < 60):
+                        raise RuntimeError(f"Invalid time in {ws.cell(row, col).coordinate}")
+                    if (h2, m2) <= (h1, m1):
+                        raise RuntimeError(f"End before start in {ws.cell(row, col).coordinate}")
                     subject, activity, groups = _parse_title(lines[0], subjects)
                     _, first_col, last_col = merged.get((row, col), (row, col, col))
                     event_rubrics = [
@@ -253,6 +267,8 @@ def parse_schedule(path: str) -> list:
                         for event_col in range(first_col, last_col + 1)
                         if event_col in column_rubrics
                     ]
+                    if not event_rubrics:
+                        raise RuntimeError(f"Event without a calendar at {ws.cell(row, col).coordinate}")
                     # II stopień cells have no group for labs and projects, the column says it
                     column_groups = [BASE_GROUP.search(r.label) for r in event_rubrics]
                     if not groups and activity != "W" and column_groups and all(column_groups):

@@ -10,6 +10,7 @@ from utils.clean_ics import clean_ics
 from utils.generate_html import generate_html
 from utils.load_schedule import EXCEL_FILE, load_rooms, load_schedule
 from utils.parse_schedule import ACTIVITIES, parse_schedule
+from utils.sync_state import build_digest, set_output, stage_state, summary, validate_build
 
 TIMEZONE = ZoneInfo("Europe/Warsaw")
 TEACHERS_FILE = os.path.join(os.path.dirname(__file__), "data", "teachers.json")
@@ -143,29 +144,27 @@ def build_combos(events_by_slug: dict):
                 print(f"::warning::Combo {name}: calendar {slug} no longer exists")
                 continue
             for event in events_by_slug[slug]:
-                key = (event["DTSTART"].dt, event["DTEND"].dt, str(event["X-PK-KEY"]))
+                key = (event["DTSTART"].dt, event["DTEND"].dt, str(event["X-PK-KEY"]),
+                       str(event.get("LOCATION", "")),
+                       tuple(str(event["DESCRIPTION"]).splitlines()[:-1]))
                 events.setdefault(key, event)
         with open(f"build/{name}.ics", "wb") as f:
             f.write(new_calendar(f"PK {name}", list(events.values())).to_ical())
 
 
-def set_output(name: str, value: str):
-    # Step output read by the workflow, ignored when running locally
-    if "GITHUB_OUTPUT" in os.environ:
-        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"{name}={value}\n")
-
-
 def main():
+    state_dir = os.environ.get("SYNC_STATE_DIR")
+    previous, old_rooms = None, {}
+    if state_dir:
+        previous = os.path.join(state_dir, "build")
+        with open(os.path.join(state_dir, "state.json")) as f:
+            old_rooms = json.load(f)["rooms"]
     os.makedirs("build", exist_ok=True)
-    if not load_schedule():
-        set_output("changed", "false")
-        return
-    clean_ics()
-
+    load_schedule()
     rubrics = parse_schedule(EXCEL_FILE)
-    rooms = load_rooms()
+    rooms = load_rooms(fallback=old_rooms)
     teachers = load_teachers()
+    clean_ics()
 
     manifest = []
     events_by_slug = {}
@@ -195,7 +194,16 @@ def main():
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
     generate_html(manifest)
-    set_output("changed", "true")
+    with open(COMBOS_FILE) as f:
+        combos = json.load(f)
+    counts = validate_build("build", previous=previous, combos=combos)
+    changed = (os.environ.get("FORCE_DEPLOY") == "true" or previous is None
+               or build_digest("build") != build_digest(previous))
+    if state_dir:
+        stage_state("build", rooms)
+    set_output("changed", str(changed).lower())
+    summary(f"Sprawdzono {len(manifest)} grup i {len(combos)} kalendarze łączone; "
+            f"{sum(counts.values())} wydarzeń. " + ("Wymagana publikacja." if changed else "Brak zmian."))
 
 
 if __name__ == "__main__":

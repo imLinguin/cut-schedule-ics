@@ -1,182 +1,106 @@
 import re
+from collections import defaultdict
 
 from icalendar import Calendar
 
-# Events are matched by X-PK-KEY ("WYKŁAD Grafika komputerowa"), which does not depend on
-# how the title is formatted. Builds from before X-PK-KEY had titles like
-# "Grafika komputerowa (W)" or "WYKŁAD Grafika komputerowa", those are translated.
+
 OLD_TITLE = re.compile(r"^(?P<subject>.+) \((?P<short>[WĆLPS])\)$")
 OLD_PREFIXES = {"W": "WYKŁAD", "Ć": "ĆW", "L": "LAB", "P": "PROJEKT", "S": "SEMINARIUM"}
 
 
-def _normalize_summary(summary: str) -> str:
+def _normalize_summary(summary):
     match = OLD_TITLE.match(summary)
-    if not match:
-        return summary
-    return f"{OLD_PREFIXES[match['short']]} {match['subject']}"
+    return f"{OLD_PREFIXES[match['short']]} {match['subject']}" if match else summary
 
 
-def _event_context(event):
-    def _format(value):
-        if value is None:
-            return None
-        if hasattr(value, "dt"):
-            return str(value.dt)
-        return str(value)
-
-    return {
-        "summary": _format(event.get("SUMMARY")),
-        "dtstart": _format(event.get("DTSTART")),
-        "dtend": _format(event.get("DTEND")),
-        "description": _format(event.get("DESCRIPTION")),
-    }
-
-
-def ics_read(file: str):
-    events = []
-    with open(file, "r") as stream:
+def ics_read(file):
+    with open(file, "rb") as stream:
         calendar = Calendar.from_ical(stream.read())
-    for event in calendar.events:  # type: ignore
-        summary_value = event.get("SUMMARY")
-        summary_text = str(summary_value) if summary_value is not None else None
-        if summary_text == "BRAK ZAJĘĆ":
+    events = []
+    for event in calendar.walk("VEVENT"):
+        summary = str(event.get("SUMMARY", ""))
+        if summary == "BRAK ZAJĘĆ":
             continue
         try:
-            start_time = event["DTSTART"].dt.time()
-            end_time = event["DTEND"].dt.time()
-            extracted = {
-                "key": str(event.get("X-PK-KEY") or _normalize_summary(summary_text or "")),
-                "summary": summary_text or "",
-                "date": str(event["DTSTART"].dt.date()),
-                "start": start_time.strftime("%H:%M"),
-                "end": end_time.strftime("%H:%M"),
-                # "L1, al. Jana Pawła II 37, Kraków" -> "L1"
-                "room": str(event.get("LOCATION") or "").split(",")[0],
-            }
-        except Exception as exc:
-            context = _event_context(event)
-            raise RuntimeError(
-                f"failed to parse event in {file} (partial={context})"
-            ) from exc
-        events.append(extracted)
-    return events
+            description = dict(
+                line.split(": ", 1) for line in str(event.get("DESCRIPTION", "")).splitlines()
+                if ": " in line
+            )
+            events.append({
+                "key": str(event.get("X-PK-KEY") or _normalize_summary(summary)),
+                "summary": summary,
+                "date": event["DTSTART"].dt.date().isoformat(),
+                "start": event["DTSTART"].dt.strftime("%H:%M"),
+                "end": event["DTEND"].dt.strftime("%H:%M"),
+                "room": str(event.get("LOCATION", "")),
+                "teacher": description.get("Prowadzący", ""),
+                "groups": description.get("Grupa", ""),
+            })
+        except (KeyError, AttributeError, ValueError) as exc:
+            raise ValueError(f"Invalid event in {file}") from exc
+    return sorted(events, key=lambda e: tuple(e.values()))
 
 
-def _group_by_summary_date(events: list):
-    # The same subject can occur more than once a day, number those occurrences
-    grouped = {}
-    for event in sorted(events, key=lambda e: (e["date"], e["start"])):
-        occurrence = 0
-        while (event["key"], event["date"], occurrence) in grouped:
-            occurrence += 1
-        grouped[(event["key"], event["date"], occurrence)] = event
-    return grouped
+def _signature(event):
+    # Ignore title formatting, but preserve the number of identical occurrences.
+    return tuple(event[k] for k in ("key", "date", "start", "end", "room", "teacher", "groups"))
 
 
-def _sorted_keys(keys):
-    return sorted(keys, key=lambda key: key[1])
-
-
-def file_diff(old_file: str, new_file: str):
-    old_events = _group_by_summary_date(ics_read(old_file))
-    new_events = _group_by_summary_date(ics_read(new_file))
-
+def _changes(old, new):
     entries = []
 
-    shared_keys = set(old_events) & set(new_events)
-    for key in _sorted_keys(shared_keys):
-        old_event = old_events[key]
-        new_event = new_events[key]
-        start_changed = old_event["start"] != new_event["start"]
-        room_changed = old_event["room"] != new_event["room"]
-        if room_changed:
-            entries.append(
-                {
-                    "date": new_event["date"],
-                    "summary": new_event["summary"],
-                    "change_type": "room_changed",
-                    "details": f"Zmiana sali: {old_event['room']} -> {new_event['room']}",
-                }
-            )
-        if start_changed:
-            entries.append(
-                {
-                    "date": new_event["date"],
-                    "summary": new_event["summary"],
-                    "change_type": "start_changed",
-                    "details": f"Zmiana godziny: {old_event['start']} - {old_event['end']} -> {new_event['start']} - {new_event['end']}",
-                }
-            )
+    def add(kind, details):
+        entries.append({"date": new["date"], "summary": new["summary"],
+                        "change_type": kind, "details": details})
 
-    added_keys = set(new_events) - set(old_events)
-    removed_keys = set(old_events) - set(new_events)
-    removed_by_summary = {}
-    for key in _sorted_keys(removed_keys):
-        summary = key[0]
-        removed_by_summary.setdefault(summary, []).append(key)
-
-    date_shifted_pairs = []
-    matched_removed_keys = set()
-    matched_added_keys = set()
-    for key in _sorted_keys(added_keys):
-        summary = key[0]
-        if not removed_by_summary.get(summary):
-            continue
-        old_key = removed_by_summary[summary].pop(0)
-        matched_removed_keys.add(old_key)
-        matched_added_keys.add(key)
-        date_shifted_pairs.append((old_key, key))
-
-    remaining_added_keys = sorted(
-        (key for key in added_keys if key not in matched_added_keys),
-        key=lambda key: key[1],
-    )
-    remaining_removed_keys = sorted(
-        (key for key in removed_keys if key not in matched_removed_keys),
-        key=lambda key: key[1],
-    )
-
-    for old_key, new_key in date_shifted_pairs:
-        old_event = old_events[old_key]
-        new_event = new_events[new_key]
-        entries.append(
-            {
-                "date": new_event["date"],
-                "summary": new_event["summary"],
-                "change_type": "date_changed",
-                "details": f"Zmiana dnia: {old_event['date']} -> {new_event['date']}",
-            }
-        )
-        if old_event["room"] != new_event["room"]:
-            entries.append(
-                {
-                    "date": new_event["date"],
-                    "summary": new_event["summary"],
-                    "change_type": "room_changed",
-                    "details": f"Zmiana sali: {old_event['room']} -> {new_event['room']}",
-                }
-            )
-
-    for key in remaining_added_keys:
-        event = new_events[key]
-        entries.append(
-            {
-                "date": event["date"],
-                "summary": event["summary"],
-                "change_type": "event_added",
-                "details": f"Nowe wydarzenie: {event['start']} - {event['end']}, sala {event['room']}",
-            }
-        )
-
-    for key in remaining_removed_keys:
-        event = old_events[key]
-        entries.append(
-            {
-                "date": event["date"],
-                "summary": event["summary"],
-                "change_type": "event_removed",
-                "details": f"Wydarzenie usunięte: {event['start']} - {event['end']}, sala {event['room']}",
-            }
-        )
-
+    if old["date"] != new["date"]:
+        add("date_changed", f"Zmiana dnia: {old['date']} -> {new['date']}")
+    if (old["start"], old["end"]) != (new["start"], new["end"]):
+        add("time_changed", f"Zmiana godziny: {old['start']} - {old['end']} -> {new['start']} - {new['end']}")
+    for field, kind, label in (("room", "room_changed", "Zmiana sali"),
+                               ("teacher", "teacher_changed", "Zmiana prowadzącego"),
+                               ("groups", "groups_changed", "Zmiana grupy")):
+        if old[field] != new[field]:
+            add(kind, f"{label}: {old[field] or 'brak'} -> {new[field] or 'brak'}")
     return entries
+
+
+def file_diff(old_file, new_file):
+    old_events, new_events = ics_read(old_file), ics_read(new_file)
+    # Remove unchanged occurrences before matching edits. Occurrence numbering
+    # would turn deletion of the first lecture into a cascade of false changes.
+    unchanged = defaultdict(list)
+    for i, event in enumerate(new_events):
+        unchanged[_signature(event)].append(i)
+    old_remaining, matched = [], set()
+    for event in old_events:
+        candidates = unchanged[_signature(event)]
+        if candidates:
+            matched.add(candidates.pop())
+        else:
+            old_remaining.append(event)
+    new_remaining = [e for i, e in enumerate(new_events) if i not in matched]
+    entries = []
+    # Pair only unambiguous occurrences, first on the same day, then across dates.
+    for fields in (("key", "date"), ("key",)):
+        old_groups, new_groups = defaultdict(list), defaultdict(list)
+        for i, event in enumerate(old_remaining):
+            old_groups[tuple(event[f] for f in fields)].append(i)
+        for i, event in enumerate(new_remaining):
+            new_groups[tuple(event[f] for f in fields)].append(i)
+        old_used, new_used = set(), set()
+        for key in sorted(old_groups.keys() & new_groups.keys()):
+            if len(old_groups[key]) == len(new_groups[key]) == 1:
+                a, b = old_groups[key][0], new_groups[key][0]
+                entries.extend(_changes(old_remaining[a], new_remaining[b]))
+                old_used.add(a)
+                new_used.add(b)
+        old_remaining = [e for i, e in enumerate(old_remaining) if i not in old_used]
+        new_remaining = [e for i, e in enumerate(new_remaining) if i not in new_used]
+    for events, kind, label in ((old_remaining, "event_removed", "Wydarzenie usunięte"),
+                                (new_remaining, "event_added", "Nowe wydarzenie")):
+        for event in events:
+            entries.append({"date": event["date"], "summary": event["summary"],
+                            "change_type": kind,
+                            "details": f"{label}: {event['start']} - {event['end']}, sala {event['room']}"})
+    return sorted(entries, key=lambda e: (e["date"], e["summary"], e["change_type"], e["details"]))

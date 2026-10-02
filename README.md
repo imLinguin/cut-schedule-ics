@@ -97,15 +97,24 @@ stops the run. Missing checkpoints also stop it if an artifact from this workflo
 deployment is still present. If all synchronization and deployment artifacts are lost,
 the workflow cannot distinguish that from first installation and initializes from the site.
 
-Removing a group removes its public link and ICS file and notifies Discord for **any year**.
-Normal event changes still notify only I stopień, year 3. Removed calendar subscriptions
+Removing a group removes its public link and ICS file. Discord notifies **only this
+cohort**: I stopień, semesters 5/6 in academic year 2026/27 and 7/8 in 2027/28.
+It switches when the next semester has classes in the source, using their dates
+(academic years separated in August), not the current date or the largest semester
+number belonging to other students. The reached semester is saved in the completed
+checkpoint and never decreases; it stops at 8. Empty future columns do not advance it.
+Edits, additions and removals outside that semester never notify, including deleted groups.
+Messages identify the group, list detailed changes and mention only the `zaoczne`
+role (`1286988227617488896`). Longer lists are attached in full.
+Removed calendar subscriptions
 may retain old events in client apps after their URL disappears. Surviving filenames
 and the two combined-calendar URLs stay unchanged. A renamed source column is treated
 as a removed group plus a new one; intentional renames need an explicit code mapping
 if the old URL must be kept.
 
-Malformed input, duplicate UIDs, invalid times, an entirely empty plan, or a surviving
-calendar unexpectedly losing all events stops publication. Removing a group does not.
+Malformed input, duplicate UIDs, invalid times or an entirely empty plan stops
+publication. Removing a group or cancelling its last class does not; a surviving
+group with no classes keeps its URL and publishes an empty calendar.
 The workflow summary reports checks and completed steps; it is not an independent
 monitor for GitHub's scheduler. Check Actions after the summer break, especially if
 GitHub has disabled scheduling due to repository inactivity.

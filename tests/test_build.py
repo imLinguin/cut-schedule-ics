@@ -25,10 +25,9 @@ class BuildTests(unittest.TestCase):
         self.assertEqual({"group-a.ics": 1}, validate_build(self.new, self.old))
         self.assertNotEqual(build_digest(self.old), build_digest(self.new))
 
-    def test_surviving_group_unexpectedly_empty_is_rejected(self):
+    def test_cancelling_a_groups_last_class_publishes_an_empty_calendar(self):
         calendar(self.new / "group-a.ics", [])
-        with self.assertRaisesRegex(ValueError, "now empty"):
-            validate_build(self.new, self.old)
+        self.assertEqual({"group-a.ics": 0, "group-b.ics": 1}, validate_build(self.new, self.old))
 
     def test_completely_empty_plan_is_rejected(self):
         for name in ("group-a.ics", "group-b.ics"):

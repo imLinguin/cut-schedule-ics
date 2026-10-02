@@ -21,21 +21,28 @@ CAMPUS_ADDRESSES = {
 }
 
 
+def room_name(room: str, rooms: dict) -> str:
+    name = rooms.get(room, {}).get("name")
+    # Keep the code from the Excel, including aliases such as S1.
+    return name if name and name.startswith(room) else f"{room} ({name})" if name else room
+
+
 def event_location(room: str, rooms: dict) -> str:
     if not room or room == "ONLINE":
         return "Online" if room else ""
     campus = rooms.get(room, {}).get("campus")
     address = CAMPUS_ADDRESSES.get(campus, campus)
-    return f"{room}, {address}" if address else room
+    label = room_name(room, rooms)
+    return f"{label}, {address}" if address else label
 
 
 def room_description(room: str, rooms: dict) -> str:
     if room == "ONLINE":
         return "online (zdalnie)"
     info = rooms.get(room, {})
-    name, campus = info.get("name"), info.get("campus")
+    campus = info.get("campus")
     # Planner names look like "L4 - 136 (GPU)", keep the code the Excel uses in front
-    text = name if name and name.startswith(room) else f"{room} ({name})" if name else room
+    text = room_name(room, rooms)
     return f"{text}, kampus {campus}" if campus and campus not in text else text
 
 
@@ -100,16 +107,29 @@ def new_calendar(name: str, events: list) -> icalendar.Calendar:
 def calendar_events(rubric, rooms: dict, teachers: dict) -> list:
     now = datetime.datetime.now(datetime.timezone.utc)
     events = []
-    for event in rubric.events:
+    uid_occurrences = {}
+    # Sort tied occurrences so reordering Excel rows does not change their IDs.
+    for event in sorted(rubric.events, key=lambda e: (
+        e.start, e.subject, e.activity, e.groups, e.room, e.teacher, e.end, e.weekend
+    )):
         prefix, category = ACTIVITIES.get(event.activity, (event.activity, None))
-        # "LAB GL2: Podstawy sieci komputerowych", group exactly as written in the plan
-        marker = " ".join(part for part in (prefix, event.groups) if part)
-        summary = f"{marker}: {event.subject}" if marker else event.subject
+        # Display names may change; keep the existing X-PK-KEY prefixes stable.
+        display_prefix = "ĆWICZENIA" if event.activity == "C" else prefix
+        summary = " ".join(part for part in (display_prefix, event.subject) if part)
+        if event.groups:
+            summary += f", grupa {event.groups}"
         if event.room == "ONLINE":
             summary = f"ONLINE – {summary}"
-        # Stable UID so calendar apps update events instead of duplicating them
+        # Preserve existing UIDs. This scheme keeps room/teacher edits in place,
+        # but moving the start or renaming the subject creates a new UID.
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"
         uid = hashlib.sha1(uid_source.encode()).hexdigest()
+        occurrence = uid_occurrences.get(uid, 0)
+        uid_occurrences[uid] = occurrence + 1
+        # Preserve existing IDs; distinguish only simultaneous occurrences that
+        # share the old identity. Both entries must remain in the full feed.
+        if occurrence:
+            uid = f"{uid}-{occurrence}"
 
         cal_event = icalendar.Event()
         cal_event.add("uid", f"{uid}@planpk.linguin.dev")

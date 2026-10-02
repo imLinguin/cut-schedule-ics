@@ -65,12 +65,12 @@ class HTTPTests(unittest.TestCase):
 
     def test_discord_json_wait_confirmation_and_unicode(self):
         with server([(200, {'Content-Type': 'application/json'}, b'{"id":"123"}')]) as (url, calls):
-            send_message(url + '/webhook?thread_id=42', '@everyone\nGrupa usunięta — GL2')
+            send_message(url + '/webhook?thread_id=42', '<@&1286988227617488896>\nGrupa usunięta — GL2')
             method, path, headers, body = calls[0]
             self.assertEqual('POST', method)
             self.assertEqual({'thread_id': ['42'], 'wait': ['true']}, parse_qs(urlsplit(path).query))
-            self.assertEqual('@everyone\nGrupa usunięta — GL2', json.loads(body)['content'])
-            self.assertEqual({'parse': ['everyone']}, json.loads(body)['allowed_mentions'])
+            self.assertEqual('<@&1286988227617488896>\nGrupa usunięta — GL2', json.loads(body)['content'])
+            self.assertEqual({'parse': [], 'roles': ['1286988227617488896']}, json.loads(body)['allowed_mentions'])
 
     def test_discord_rate_limit_body_retries_without_real_wait(self):
         responses = [(429, {'Content-Type': 'application/json'}, b'{"retry_after":0.1}'),

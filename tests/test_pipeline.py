@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 import zipfile
 
 import openpyxl
+from icalendar import Calendar
 
 import main
 from utils.sync_state import restore_state
@@ -208,3 +209,92 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(previous, self.site)
         self.assertEqual(previous_artifacts, len(self.artifacts))
         self.assertEqual([], self.messages)
+
+    def update_source_cells(self, values):
+        book = openpyxl.load_workbook(io.BytesIO(self.source))
+        for cell, value in values.items():
+            book.active[cell] = value
+        stream = io.BytesIO()
+        book.save(stream)
+        book.close()
+        self.source = stream.getvalue()
+
+    def site_events(self, name):
+        return Calendar.from_ical(self.site[name]).walk('VEVENT')
+
+    def test_full_feed_edit_cancel_last_class_and_add_new_class(self):
+        self.sync()
+        group = 'i-rok-3-sem-5-gl1.ics'
+        unchanged_group = 'i-rok-3-sem-5-gl2.ics'
+        other_uid = str(self.site_events(unchanged_group)[0]['UID'])
+        self.update_source_cells({'C4': 'Sieci komputerowe L\nAnna Nowak\n10:00–12:00 L4'})
+        self.assertTrue(self.sync())
+        edited = self.site_events(group)
+        self.assertEqual(1, len(edited))
+        self.assertEqual('LAB Sieci komputerowe, grupa GL1', str(edited[0]['SUMMARY']))
+        self.assertEqual((10, 12), (edited[0]['DTSTART'].dt.hour, edited[0]['DTEND'].dt.hour))
+        self.assertEqual('L4', str(edited[0]['LOCATION']))
+        self.assertIn('Anna Nowak', str(edited[0]['DESCRIPTION']))
+        self.assertFalse(any(str(e['X-PK-KEY']) == 'LAB Sieci' for e in self.site_events('gomberman.ics')))
+
+        # The column still exists, but all its classes have been cancelled.
+        self.update_source_cells({'C4': None})
+        self.assertTrue(self.sync())
+        self.assertEqual([], self.site_events(group))
+        self.assertIn(group, {entry['file'] for entry in json.loads(self.site['calendars.json'])})
+        self.assertEqual(1, len(self.site_events('gomberman.ics')))
+        self.assertIn('Wydarzenie usunięte', self.messages[-1])
+        self.assertNotIn('Grupa usunięta', self.messages[-1])
+
+        self.update_source_cells({'C4': 'Nowy przedmiot C\nJan Kowalski\n14:00–15:30 ONLINE'})
+        self.assertTrue(self.sync())
+        added = self.site_events(group)
+        self.assertEqual(1, len(added))
+        self.assertEqual('ONLINE – ĆWICZENIA Nowy przedmiot, grupa GL1', str(added[0]['SUMMARY']))
+        self.assertEqual('Online', str(added[0]['LOCATION']))
+        self.assertEqual((14, 15, 30), (added[0]['DTSTART'].dt.hour, added[0]['DTEND'].dt.hour, added[0]['DTEND'].dt.minute))
+        self.assertEqual(2, len(self.site_events('gomberman.ics')))
+        self.assertEqual(other_uid, str(self.site_events(unchanged_group)[0]['UID']))
+        self.assertIn('Nowe wydarzenie', self.messages[-1])
+        self.assertFalse(self.sync())
+
+    def test_simultaneous_same_subject_entries_are_published_in_group_and_combo(self):
+        self.sync()
+        self.update_source_cells({'C5': 'Sieci L · GL3\nAnna Nowak\n08:00–09:30 L4'})
+        self.assertTrue(self.sync())
+        group = self.site_events('i-rok-3-sem-5-gl1.ics')
+        self.assertEqual(2, len(group))
+        self.assertEqual({'L1', 'L4'}, {str(e['LOCATION']) for e in group})
+        self.assertEqual(2, len({str(e['UID']) for e in group}))
+        self.assertEqual(3, len(self.site_events('gomberman.ics')))
+        self.assertFalse(self.sync())
+
+    def test_cohort_progresses_to_eight_and_only_commits_after_notification(self):
+        def completed_semester():
+            content = next(data for metadata, data in reversed(self.artifacts)
+                           if metadata['name'].startswith('sync-state-'))
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                return json.loads(archive.read('state.json'))['notification_semester']
+
+        self.sync()
+        self.assertEqual(5, completed_semester())
+        for semester, day in ((6, '27.02\n2027'), (7, '02.10\n2027'), (8, '26.02\n2028')):
+            self.update_source_cells({'C2': f'ROK {(semester + 1) // 2} sem {semester}', 'A4': day})
+            if semester == 6:
+                with self.assertRaisesRegex(RuntimeError, 'HTTP 503'):
+                    self.sync(failure='discord')
+                self.assertEqual(5, completed_semester())
+            self.assertTrue(self.sync())
+            self.assertEqual(semester, completed_semester())
+            self.assertIn(f'Rok {(semester + 1) // 2} sem {semester}', self.messages[-1])
+            self.assertNotIn('Grupa usunięta', self.messages[-1])
+            self.assertTrue(self.messages[-1].startswith('<@&1286988227617488896>'))
+            self.assertFalse(self.sync())
+        self.update_source_cells({'C2': 'ROK 3 sem 5', 'A4': '07.10\n2028'})
+        self.sync()
+        self.assertEqual(8, completed_semester())
+        sent = len(self.messages)
+        self.update_source_cells({'C4': 'Sieci L\nJan Kowalski\n08:00–09:30 L4'})
+        self.sync()
+        self.assertEqual(sent, len(self.messages))
+        self.assertEqual(8, completed_semester())

@@ -77,12 +77,8 @@ def validate_build(directory, previous=None, combos=None):
             if not isinstance(start, datetime.datetime) or not isinstance(end, datetime.datetime) or end <= start:
                 raise ValueError(f"Invalid event times in {name}")
         counts[name] = len(events)
-        # A deleted column is allowed. A surviving, unexpectedly empty column is
-        # suspicious. Empty combos are allowed when all their groups were deleted.
-        if name in public_files and not events and previous:
-            old = Path(previous) / name
-            if old.exists() and read_calendar(old).walk("VEVENT"):
-                raise ValueError(f"Previously populated calendar is now empty: {name}")
+        # A group's last class can be cancelled. Publish its empty feed so the
+        # previous event disappears; do not block the other groups' updates.
     if not any(counts[name] for name in public_files):
         raise ValueError("The entire timetable is empty")
     return counts

@@ -107,6 +107,6 @@ class ParserTests(unittest.TestCase):
         rubric = Rubric('I', 'Rok 3 sem 5', 'GL1', 'i-rok-3-sem-5-gl1', events=[event])
         raw = new_calendar('Polski', calendar_events(rubric, {}, {})).to_ical()
         restored = Calendar.from_ical(raw).walk('VEVENT')[0]
-        self.assertEqual('ONLINE – LAB GL1: ' + subject, str(restored['SUMMARY']))
+        self.assertEqual('ONLINE – LAB ' + subject + ', grupa GL1', str(restored['SUMMARY']))
         self.assertEqual('Online', str(restored['LOCATION']))
         self.assertTrue(all(len(line) <= 75 for line in raw.split(b'\r\n')))

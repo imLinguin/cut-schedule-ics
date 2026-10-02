@@ -59,3 +59,11 @@ class DiffTests(unittest.TestCase):
     def test_event_order_does_not_matter(self):
         a, b = event(), event(subject="Grafika")
         self.assertEqual([], self.diff([a, b], [b, a]))
+
+    def test_real_room_change_is_detected_using_full_description(self):
+        old, new = event(room="L5, Kraków"), event(room="L4 - 136, Kraków")
+        old["DESCRIPTION"] += "\nSala: L5 - 143, kampus Czyżyny"
+        new["DESCRIPTION"] += "\nSala: L4 - 136, kampus Czyżyny"
+        result = self.diff([old], [new])
+        self.assertEqual(["room_changed"], [d["change_type"] for d in result])
+        self.assertIn("L4 - 136", result[0]["details"])

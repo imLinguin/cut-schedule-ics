@@ -32,7 +32,9 @@ def ics_read(file):
                 "date": event["DTSTART"].dt.date().isoformat(),
                 "start": event["DTSTART"].dt.strftime("%H:%M"),
                 "end": event["DTEND"].dt.strftime("%H:%M"),
-                "room": str(event.get("LOCATION", "")),
+                # Our description contains the full room identity in old and
+                # new exports. Merely enriching LOCATION is not a room change.
+                "room": description.get("Sala") or str(event.get("LOCATION", "")),
                 "teacher": description.get("Prowadzący", ""),
                 "groups": description.get("Grupa", ""),
             })
@@ -63,6 +65,17 @@ def _changes(old, new):
         if old[field] != new[field]:
             add(kind, f"{label}: {old[field] or 'brak'} -> {new[field] or 'brak'}")
     return entries
+
+
+def _event_change(event, kind):
+    label = "Nowe wydarzenie" if kind == "event_added" else "Wydarzenie usunięte"
+    return {"date": event["date"], "summary": event["summary"], "change_type": kind,
+            "details": (f"{label}: {event['start']} - {event['end']}, sala {event['room'] or 'brak'}; "
+                        f"prowadzący: {event['teacher'] or 'brak'}; grupa: {event['groups'] or 'brak'}")}
+
+
+def event_changes(path, kind):
+    return [_event_change(event, kind) for event in ics_read(path)]
 
 
 def file_diff(old_file, new_file):
@@ -97,10 +110,7 @@ def file_diff(old_file, new_file):
                 new_used.add(b)
         old_remaining = [e for i, e in enumerate(old_remaining) if i not in old_used]
         new_remaining = [e for i, e in enumerate(new_remaining) if i not in new_used]
-    for events, kind, label in ((old_remaining, "event_removed", "Wydarzenie usunięte"),
-                                (new_remaining, "event_added", "Nowe wydarzenie")):
+    for events, kind in ((old_remaining, "event_removed"), (new_remaining, "event_added")):
         for event in events:
-            entries.append({"date": event["date"], "summary": event["summary"],
-                            "change_type": kind,
-                            "details": f"{label}: {event['start']} - {event['end']}, sala {event['room']}"})
+            entries.append(_event_change(event, kind))
     return sorted(entries, key=lambda e: (e["date"], e["summary"], e["change_type"], e["details"]))

@@ -19,7 +19,7 @@ class DisplayTests(unittest.TestCase):
         return calendar_events(rubric, {"L5": {"name": "L5 - 143", "campus": "Czyżyny"}}, {})[0]
 
     def test_online_type_subject_and_groups_in_requested_order(self):
-        self.assertEqual("ONLINE – WYKŁAD Techniki multimedialne, grupa K01+K02",
+        self.assertEqual("‼️ONLINE‼️ – WYKŁAD Techniki multimedialne, grupa K01+K02",
                          str(self.make_event()["SUMMARY"]))
 
     def test_all_activity_labels_online_and_in_person(self):
@@ -27,16 +27,29 @@ class DisplayTests(unittest.TestCase):
                                 ("P", "PROJEKT"), ("S", "SEMINARIUM")):
             for room in ("ONLINE", "L5"):
                 with self.subTest(activity=activity, room=room):
-                    prefix = "ONLINE – " if room == "ONLINE" else ""
+                    prefix = "‼️ONLINE‼️ – " if room == "ONLINE" else ""
                     self.assertEqual(f"{prefix}{label} Techniki multimedialne, grupa K01+K02",
                                      str(self.make_event(activity, room)["SUMMARY"]))
 
     def test_no_empty_group_suffix_or_extra_separator(self):
         self.assertEqual("WYKŁAD Techniki multimedialne", str(self.make_event(room="L5", groups="")["SUMMARY"]))
-        self.assertEqual("ONLINE – Techniki multimedialne", str(self.make_event(activity="", groups="")["SUMMARY"]))
+        self.assertEqual("‼️ONLINE‼️ – Techniki multimedialne", str(self.make_event(activity="", groups="")["SUMMARY"]))
 
     def test_exercise_display_does_not_change_diff_identity(self):
         self.assertEqual("ĆW Techniki multimedialne", str(self.make_event(activity="C")["X-PK-KEY"]))
+
+    def test_online_highlight_round_trip_preserves_identity_without_notification(self):
+        new = self.make_event()
+        old = deepcopy(new)
+        old["SUMMARY"] = str(new["SUMMARY"]).replace("‼️ONLINE‼️", "ONLINE")
+        with tempfile.TemporaryDirectory() as directory:
+            before, after = Path(directory) / "before.ics", Path(directory) / "after.ics"
+            before.write_bytes(new_calendar("Test", [old]).to_ical())
+            after.write_bytes(new_calendar("Test", [new]).to_ical())
+            restored = Calendar.from_ical(after.read_bytes()).walk("VEVENT")[0]
+            self.assertEqual(str(new["SUMMARY"]), str(restored["SUMMARY"]))
+            self.assertEqual(old["UID"], restored["UID"])
+            self.assertEqual([], file_diff(before, after))
 
     def test_full_room_location_and_special_cases(self):
         cases = [

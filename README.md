@@ -92,10 +92,12 @@ The Pages artifact is retained for the same period: if it is newer than the comp
 checkpoint, the next run republishes even if the source has reverted to its old contents.
 An uncertain HTTP result or failure saving the checkpoint can cause a repeated message;
 delivery is not exactly-once. Intermediate source edits between checks are not an audit log.
-Do not delete the checkpoint artifacts: an expired, incomplete or corrupt checkpoint
-stops the run. Missing checkpoints also stop it if an artifact from this workflow's
-deployment is still present. If all synchronization and deployment artifacts are lost,
-the workflow cannot distinguish that from first installation and initializes from the site.
+If the latest checkpoint expires or no checkpoint remains, the workflow automatically
+downloads and validates the published calendars, then saves that baseline before deploying.
+Actions displays a warning: pending notifications about changes already published may
+be lost. Future changes are compared normally. Do not delete artifacts as routine cleanup.
+API/network errors, corrupt or incomplete checkpoints, and invalid published calendars
+still stop the run; they never silently reset the notification baseline.
 
 Removing a group removes its public link and ICS file. Discord notifies **only this
 cohort**: I stopień, semesters 5/6 in academic year 2026/27 and 7/8 in 2027/28.

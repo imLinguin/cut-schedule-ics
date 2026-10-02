@@ -6,6 +6,19 @@ from icalendar import Calendar
 
 OLD_TITLE = re.compile(r"^(?P<subject>.+) \((?P<short>[WĆLPS])\)$")
 OLD_PREFIXES = {"W": "WYKŁAD", "Ć": "ĆW", "L": "LAB", "P": "PROJEKT", "S": "SEMINARIUM"}
+TITLE_WORDS = {"prof.", "zw.", "dr", "hab.", "inż.", "mgr", "arch."}
+
+
+def _plain_teacher(teacher):
+    """ "dr hab. inż. Jaworski Maciej, prof. PK" -> "Jaworski Maciej".
+    Titles come from data/teachers.json, adding one there is not a teacher change. """
+    names = []
+    for name in teacher.split(" / "):
+        words = name.replace(", prof. PK", "").split()
+        while words and words[0] in TITLE_WORDS:
+            words.pop(0)
+        names.append(" ".join(words))
+    return " / ".join(names)
 
 
 def _normalize_summary(summary):
@@ -36,6 +49,7 @@ def ics_read(file):
                 # new exports. Merely enriching LOCATION is not a room change.
                 "room": description.get("Sala") or str(event.get("LOCATION", "")),
                 "teacher": description.get("Prowadzący", ""),
+                "teacher_name": _plain_teacher(description.get("Prowadzący", "")),
                 "groups": description.get("Grupa", ""),
             })
         except (KeyError, AttributeError, ValueError) as exc:
@@ -45,7 +59,7 @@ def ics_read(file):
 
 def _signature(event):
     # Ignore title formatting, but preserve the number of identical occurrences.
-    return tuple(event[k] for k in ("key", "date", "start", "end", "room", "teacher", "groups"))
+    return tuple(event[k] for k in ("key", "date", "start", "end", "room", "teacher_name", "groups"))
 
 
 def _changes(old, new):
@@ -59,10 +73,10 @@ def _changes(old, new):
         add("date_changed", f"Zmiana dnia: {old['date']} -> {new['date']}")
     if (old["start"], old["end"]) != (new["start"], new["end"]):
         add("time_changed", f"Zmiana godziny: {old['start']} - {old['end']} -> {new['start']} - {new['end']}")
-    for field, kind, label in (("room", "room_changed", "Zmiana sali"),
-                               ("teacher", "teacher_changed", "Zmiana prowadzącego"),
-                               ("groups", "groups_changed", "Zmiana grupy")):
-        if old[field] != new[field]:
+    for field, compared, kind, label in (("room", "room", "room_changed", "Zmiana sali"),
+                                         ("teacher", "teacher_name", "teacher_changed", "Zmiana prowadzącego"),
+                                         ("groups", "groups", "groups_changed", "Zmiana grupy")):
+        if old[compared] != new[compared]:
             add(kind, f"{label}: {old[field] or 'brak'} -> {new[field] or 'brak'}")
     return entries
 

@@ -34,7 +34,7 @@ class PipelineTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
         output = patch('sys.stdout', new_callable=io.StringIO)
-        output.start()
+        self.output = output.start()
         self.addCleanup(output.stop)
         self.combos = {'gomberman': ['i-rok-3-sem-5-gl1', 'i-rok-3-sem-5-gl2'],
                        'sztywne-gity': ['i-rok-3-sem-5-gl2']}
@@ -89,7 +89,7 @@ class PipelineTests(unittest.TestCase):
         with zipfile.ZipFile(stream, 'w') as archive:
             for name_in_archive, data in self.read_directory(directory).items() if directory else []:
                 archive.writestr(name_in_archive, data)
-        identity = len(self.artifacts) + 1
+        identity = max((a['id'] for a, _ in self.artifacts), default=0) + 1
         self.artifacts.append(({
             'name': name, 'id': identity, 'expired': False,
             'created_at': f'2026-10-01T00:00:{identity:02d}Z',
@@ -102,7 +102,8 @@ class PipelineTests(unittest.TestCase):
         if path.endswith('/actions/artifacts'):
             return Mock(json=Mock(return_value={'artifacts': [a for a, _ in reversed(self.artifacts)]}))
         if path.startswith('/archive/'):
-            return Mock(content=self.artifacts[int(path.rsplit('/', 1)[1]) - 1][1])
+            identity = int(path.rsplit('/', 1)[1])
+            return Mock(content=next(data for metadata, data in self.artifacts if metadata['id'] == identity))
         if urlsplit(url).netloc == 'planpk.linguin.dev':
             return Mock(content=self.site[path.lstrip('/')])
         raise AssertionError(f'Unexpected network request: {path}')
@@ -164,6 +165,50 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Grupa usunięta', self.messages[0])
         self.assertFalse(self.sync())
         self.assertEqual(1, len(self.messages))
+
+    def test_expired_checkpoint_recovers_then_retries_failed_notification(self):
+        self.sync()
+        self.artifacts[-1][0]['expired'] = True
+        self.source = self.make_source(room='L4')
+        with self.assertRaisesRegex(RuntimeError, 'HTTP 503'):
+            self.sync(failure='discord')
+        self.assertIn('::warning::Ostatni zapis synchronizacji wygasł.', self.output.getvalue())
+        self.assertEqual([], self.messages)
+        self.assertTrue(self.sync())
+        self.assertIn('Zmiana sali: L1 -> L4', self.messages[0])
+        self.assertFalse(self.sync())
+        self.assertEqual(1, len(self.messages))
+
+    def test_lost_checkpoint_after_deploy_recovers_and_notifies_future_changes(self):
+        self.sync()
+        self.source = self.make_source(room='L4')
+        with self.assertRaisesRegex(RuntimeError, 'HTTP 503'):
+            self.sync(failure='discord')
+        self.artifacts = [(metadata, data) for metadata, data in self.artifacts
+                          if not metadata['name'].startswith('sync-state-')]
+        self.assertTrue(self.sync())
+        self.assertIn('::warning::Brak zapisu synchronizacji.', self.output.getvalue())
+        # The already-published change cannot be reconstructed after losing state.
+        self.assertEqual([], self.messages)
+        self.source = self.make_source(room='L5')
+        self.assertTrue(self.sync())
+        self.assertIn('Zmiana sali: L4 -> L5', self.messages[0])
+        self.assertFalse(self.sync())
+        self.assertEqual(1, len(self.messages))
+
+    def test_recovery_keeps_published_cohort_semester(self):
+        self.sync()
+        self.update_source_cells({'C2': 'ROK 4 sem 7', 'A4': '02.10\n2027'})
+        self.sync()
+        sent = len(self.messages)
+        self.artifacts.clear()
+        self.assertTrue(self.sync())
+        self.assertEqual(sent, len(self.messages))
+        self.update_source_cells({'C4': 'Sieci L\nJan Kowalski\n08:00–09:30 L4'})
+        self.assertTrue(self.sync())
+        self.assertIn('Rok 4 sem 7', self.messages[-1])
+        self.assertIn('Zmiana sali: L1 -> L4', self.messages[-1])
+        self.assertFalse(self.sync())
 
     def test_removal_notification_survives_successful_deploy_and_failed_discord(self):
         self.sync()
@@ -250,7 +295,7 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(self.sync())
         added = self.site_events(group)
         self.assertEqual(1, len(added))
-        self.assertEqual('ONLINE – ĆWICZENIA Nowy przedmiot, grupa GL1', str(added[0]['SUMMARY']))
+        self.assertEqual('‼️ONLINE‼️ – ĆWICZENIA Nowy przedmiot, grupa GL1', str(added[0]['SUMMARY']))
         self.assertEqual('Online', str(added[0]['LOCATION']))
         self.assertEqual((14, 15, 30), (added[0]['DTSTART'].dt.hour, added[0]['DTEND'].dt.hour, added[0]['DTEND'].dt.minute))
         self.assertEqual(2, len(self.site_events('gomberman.ics')))

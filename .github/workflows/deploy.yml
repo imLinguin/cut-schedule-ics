@@ -44,8 +44,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      # Bootstrap must be durable before the first deployment/notification too.
-      - name: Preserve initial published baseline
+      # Initial/recovered baseline must be durable before deployment/notification.
+      - name: Preserve published baseline
         if: ${{ steps.previous.outputs.bootstrap == 'true' }}
         uses: actions/upload-artifact@v4
         with:

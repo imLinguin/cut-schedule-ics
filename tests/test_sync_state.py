@@ -73,10 +73,15 @@ class StateTests(unittest.TestCase):
         self.assertIn("force_deploy=false", Path("outputs.txt").read_text())
 
     @patch("utils.sync_state._get")
-    def test_expired_state_is_not_silently_treated_as_no_changes(self, get):
-        get.return_value.json.return_value = {"artifacts": [artifact("sync-state-1-1", expired=True)]}
-        with self.assertRaisesRegex(RuntimeError, "expired"):
+    def test_expired_state_recovers_published_baseline_with_warning(self, get):
+        self.published_responses(get, [artifact("sync-state-1-1", expired=True)])
+        with patch("builtins.print") as output:
             restore_state()
+        self.assertTrue(any("::warning::" in str(call) and "wygasł" in str(call)
+                            for call in output.call_args_list))
+        self.assertIn("bootstrap=true", Path("outputs.txt").read_text())
+        self.assertIn("force_deploy=true", Path("outputs.txt").read_text())
+        self.assertTrue(Path("sync-state/state.json").exists())
 
     @patch("utils.sync_state._get")
     def test_corrupt_checkpoint_does_not_fall_back_to_a_different_baseline(self, get):
@@ -100,17 +105,51 @@ class StateTests(unittest.TestCase):
 
     @patch("utils.sync_state._get")
     def test_newest_expired_checkpoint_does_not_fall_back_to_older_state(self, get):
-        get.side_effect = [Mock(json=Mock(return_value={"artifacts": [
-            artifact("sync-state-2-1", 2, expired=True), artifact("sync-state-1-1", 1)]})),
-            Mock(content=archive_bytes())]
-        with self.assertRaisesRegex(RuntimeError, "expired"):
-            restore_state()
+        self.published_responses(get, [artifact("sync-state-2-1", 2, expired=True),
+                                       artifact("sync-state-1-1", 1)])
+        restore_state()
+        self.assertTrue(all("example.test/archive" not in call.args[1]
+                            for call in get.call_args_list))
 
     @patch("utils.sync_state._get")
-    def test_missing_checkpoint_after_managed_deploy_is_not_a_first_run(self, get):
-        get.return_value.json.return_value = {"artifacts": [artifact("github-pages-10-1", 10)]}
-        with self.assertRaisesRegex(RuntimeError, "checkpoint"):
+    def test_missing_checkpoint_after_managed_deploy_recovers(self, get):
+        self.published_responses(get, [artifact("github-pages-10-1", 10)])
+        restore_state()
+        self.assertTrue(Path("sync-state/state.json").exists())
+        self.assertIn("bootstrap=true", Path("outputs.txt").read_text())
+
+    @patch("utils.sync_state._get")
+    def test_api_failure_does_not_reset_baseline(self, get):
+        get.side_effect = RuntimeError("Download failed: HTTP 503")
+        with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
             restore_state()
+        self.assertEqual(1, get.call_count)
+        self.assertFalse(Path("sync-state").exists())
+
+    @patch("utils.sync_state._get")
+    def test_checkpoint_download_failure_does_not_reset_baseline(self, get):
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": [artifact("sync-state-1-1")]})),
+                           RuntimeError("Download failed: network error")]
+        with self.assertRaisesRegex(RuntimeError, "network error"):
+            restore_state()
+        self.assertEqual(2, get.call_count)
+        self.assertFalse(Path("sync-state").exists())
+
+    @patch("utils.sync_state._get")
+    def test_recovery_rejects_invalid_published_calendar(self, get):
+        self.published_responses(get, [], invalid=True)
+        with self.assertRaises(ValueError):
+            restore_state()
+        self.assertFalse(Path("sync-state/state.json").exists())
+        self.assertFalse(Path("outputs.txt").exists())
+
+    @patch("utils.sync_state._get")
+    def test_recovery_rejects_manifest_changing_during_download(self, get):
+        self.published_responses(get, [], changed_manifest=True)
+        with self.assertRaisesRegex(RuntimeError, "manifest changed"):
+            restore_state()
+        self.assertFalse(Path("sync-state/state.json").exists())
+        self.assertFalse(Path("outputs.txt").exists())
 
     @patch("utils.sync_state._get")
     def test_pagination_preserves_newer_unfinished_deployment(self, get):
@@ -180,18 +219,23 @@ class StateTests(unittest.TestCase):
         self.assertEqual(old, Path("sync-state/build/group.ics").read_bytes())
         self.assertNotEqual(old, Path("next-state/build/group.ics").read_bytes())
 
-    @patch("utils.sync_state._get")
-    def test_first_run_preserves_published_baseline_before_deployment(self, get):
+    def published_responses(self, get, artifacts, invalid=False, changed_manifest=False):
         Path("data").mkdir()
         Path("data/combos.json").write_text(json.dumps({"gomberman": ["group"], "sztywne-gity": ["group"]}))
         manifest("published", ["group.ics"])
         content = calendar("published/group.ics", [event()]).read_bytes()
         manifest_content = Path("published/calendars.json").read_bytes()
-        get.side_effect = [Mock(json=Mock(return_value={"artifacts": []})),
+        get.side_effect = [Mock(json=Mock(return_value={"artifacts": artifacts})),
                            Mock(content=manifest_content),
-                           Mock(content=content), Mock(content=content), Mock(content=content),
-                           Mock(content=manifest_content)]
+                           Mock(content=b"invalid" if invalid else content),
+                           Mock(content=content), Mock(content=content),
+                           Mock(content=b"[]" if changed_manifest else manifest_content)]
         os.environ["GITHUB_OUTPUT"] = str(Path("outputs.txt").resolve())
+        return content
+
+    @patch("utils.sync_state._get")
+    def test_first_run_preserves_published_baseline_before_deployment(self, get):
+        content = self.published_responses(get, [])
         restore_state()
         self.assertIn("bootstrap=true", Path("outputs.txt").read_text())
         self.assertEqual(content, Path("sync-state/build/group.ics").read_bytes())

@@ -27,6 +27,21 @@ class DiffTests(unittest.TestCase):
         result = self.diff([event()], [event(teacher="Anna Nowak", groups="GL1")])
         self.assertEqual({"teacher_changed", "groups_changed"}, {d["change_type"] for d in result})
 
+    def test_added_academic_title_is_not_a_teacher_change(self):
+        old = event(teacher="Świszcz Łukasz")
+        self.assertEqual([], self.diff([old], [event(teacher="mgr inż. Świszcz Łukasz")]))
+        self.assertEqual([], self.diff([old], [event(teacher="dr hab. inż. Świszcz Łukasz, prof. PK")]))
+        result = self.diff([old], [event(teacher="dr Anna Nowak")])
+        self.assertEqual(["teacher_changed"], [d["change_type"] for d in result])
+        self.assertIn("dr Anna Nowak", result[0]["details"])
+
+    def test_academic_titles_with_multiple_teachers_preserve_actual_changes(self):
+        old = event(teacher="Jan Kowalski / Anna Nowak")
+        titled = event(teacher="prof. dr hab. inż. Jan Kowalski / mgr Anna Nowak")
+        self.assertEqual([], self.diff([old], [titled]))
+        result = self.diff([titled], [event(teacher="prof. dr hab. inż. Jan Kowalski")])
+        self.assertEqual(["teacher_changed"], [change["change_type"] for change in result])
+
     def test_moved_day_includes_time_and_room(self):
         result = self.diff([event()], [event(start="2026-10-04T10:00", end="2026-10-04T12:00", room="L2")])
         self.assertEqual({"date_changed", "time_changed", "room_changed"}, {d["change_type"] for d in result})

@@ -156,7 +156,7 @@ def restore_state():
     token = os.environ["GITHUB_TOKEN"]
     with _session() as session:
         session.headers.update({"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"})
-        page, latest_deployment, saw_managed_deployment = 1, "", False
+        page, latest_deployment = 1, ""
         candidates = []
         while True:
             artifacts = _get(session, f"https://api.github.com/repos/{repo}/actions/artifacts?per_page=100&page={page}").json()["artifacts"]
@@ -168,7 +168,6 @@ def restore_state():
                     continue
                 if item["name"] == "github-pages" or item["name"].startswith("github-pages-"):
                     latest_deployment = max(latest_deployment, item["created_at"])
-                    saw_managed_deployment |= item["name"].startswith("github-pages-")
                 if not item["name"].startswith("sync-state-"):
                     continue
                 candidates.append(item)
@@ -180,7 +179,8 @@ def restore_state():
         if candidates:
             newest = max(candidates, key=lambda item: (item["created_at"], item["id"]))
             if newest["expired"]:
-                raise RuntimeError("Synchronization checkpoint expired; recover it before continuing")
+                _restore_published_state("Ostatni zapis synchronizacji wygasł.")
+                return
             content = _get(session, newest["archive_download_url"]).content
             _extract_state(content, STATE_DIR)
             set_output("bootstrap", "false")
@@ -190,10 +190,12 @@ def restore_state():
             set_output("force_deploy", str(latest_deployment >= newest["created_at"]).lower())
             summary("Odtworzono ostatni zakończony stan synchronizacji.")
             return
-    if saw_managed_deployment:
-        raise RuntimeError("Missing checkpoint after an attempted deployment; recover it before continuing")
-    # First migration only: persist this baseline BEFORE deploying anything, so
-    # even a failed first notification can be retried against the same snapshot.
+    _restore_published_state("Brak zapisu synchronizacji.")
+
+
+def _restore_published_state(reason):
+    # Persist this baseline BEFORE deployment, including recovery after expiry.
+    # API/download errors and corrupt checkpoints must not trigger this fallback.
     with open("data/combos.json") as stream:
         combos = json.load(stream)
     build = STATE_DIR / "build"
@@ -213,7 +215,10 @@ def restore_state():
     _write_metadata(STATE_DIR, {})
     set_output("bootstrap", "true")
     set_output("force_deploy", "true")
-    summary("Pierwsza inicjalizacja z opublikowanych kalendarzy; wcześniejsze dostarczenie powiadomień nie jest weryfikowalne.")
+    warning = (reason + " Odtworzono stan z opublikowanych kalendarzy. "
+               "Zaległe powiadomienia o zmianach już widocznych na stronie mogą zostać utracone.")
+    print("::warning::" + warning)
+    summary(warning)
 
 
 if __name__ == "__main__":

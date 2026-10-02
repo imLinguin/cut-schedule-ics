@@ -119,7 +119,7 @@ def calendar_events(rubric, rooms: dict, teachers: dict) -> list:
         if event.groups:
             summary += f", grupa {event.groups}"
         if event.room == "ONLINE":
-            summary = f"ONLINE – {summary}"
+            summary = f"‼️ONLINE‼️ – {summary}"
         # Preserve existing UIDs. This scheme keeps room/teacher edits in place,
         # but moving the start or renaming the subject creates a new UID.
         uid_source = f"{rubric.slug}|{event.start.isoformat()}|{event.subject}|{event.activity}"

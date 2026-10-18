@@ -53,10 +53,14 @@ class DisplayTests(unittest.TestCase):
 
     def test_full_room_location_and_special_cases(self):
         cases = [
-            ("L5", {"L5": {"name": "L5 - 143", "campus": "Czyżyny"}}, "L5 - 143, al. Jana Pawła II 37, Kraków"),
+            ("L5", {"L5": {"name": "L5 - 143", "campus": "Czyżyny"}}, "L5 - 143, al. Jana Pawła II 39a, Kraków"),
+            ("L1", {"L1": {"campus": "Czyżyny"}}, "L1, al. Jana Pawła II 39a, Kraków"),
+            ("L10", {"L10": {"campus": "Czyżyny"}}, "L10, Czyżyny"),
+            ("A1", {"A1": {"campus": "Czyżyny"}}, "A1, Czyżyny"),
+            ("L1", {"L1": {"campus": "Warszawska"}}, "L1, ul. Warszawska 24, Kraków"),
             ("S1", {"S1": {"name": "SEMINARYJNA", "campus": "Warszawska"}}, "S1 (SEMINARYJNA), ul. Warszawska 24, Kraków"),
             ("L5", {"L5": {"name": "L5 - 143", "campus": None}}, "L5 - 143"),
-            ("L5", {"L5": {"name": None, "campus": "Czyżyny"}}, "L5, al. Jana Pawła II 37, Kraków"),
+            ("L5", {"L5": {"name": None, "campus": "Czyżyny"}}, "L5, al. Jana Pawła II 39a, Kraków"),
             ("X1", {}, "X1"),
             ("ONLINE", {}, "Online"),
             ("", {}, ""),
@@ -64,6 +68,28 @@ class DisplayTests(unittest.TestCase):
         for room, metadata, expected in cases:
             with self.subTest(room=room, metadata=metadata):
                 self.assertEqual(expected, event_location(room, metadata))
+
+    def test_all_confirmed_cz_t_rooms_use_building_address(self):
+        for room in ("L1", "L2", "L3", "L4", "L5", "P1", "W1", "S1", "SEMINARYJNA"):
+            with self.subTest(room=room):
+                self.assertTrue(event_location(room, {room: {"campus": "Czyżyny"}}).endswith(
+                    ", al. Jana Pawła II 39a, Kraków"))
+
+    def test_other_sites_are_not_assigned_the_cz_t_address(self):
+        for room, campus, address in (
+            ("DS4-SILOWNIA", "Czyżyny", "ul. Skarżyńskiego 9, Kraków"),
+            ("HALA-KAMIENNA", "Kamienna", "ul. Kamienna 17, Kraków"),
+            ("LEA", "Lea", "ul. Lea 114, Kraków"),
+        ):
+            with self.subTest(room=room):
+                self.assertEqual(f"{room}, {address}", event_location(room, {room: {"campus": campus}}))
+
+    def test_room_names_match_planner_display_overrides(self):
+        rooms = {"114": {"campus": "Warszawska", "name": "Warszawska 114 - komputery standardowe"},
+                 "L2": {"campus": "Czyżyny", "name": "L2 - nowe komputery z Windows"}}
+        self.assertIn("Macintoshe (macOS)", event_location("114", rooms))
+        self.assertIn("Macintoshe (macOS)", room_description("114", rooms))
+        self.assertIn("standardowe komputery (Windows)", event_location("L2", rooms))
 
     def test_room_description_keeps_existing_format(self):
         self.assertEqual("L5 - 143, kampus Czyżyny",
@@ -73,7 +99,7 @@ class DisplayTests(unittest.TestCase):
         value = self.make_event("C", "L5")
         restored = Calendar.from_ical(new_calendar("Test", [value]).to_ical()).walk("VEVENT")[0]
         self.assertEqual("ĆWICZENIA Techniki multimedialne, grupa K01+K02", str(restored["SUMMARY"]))
-        self.assertEqual("L5 - 143, al. Jana Pawła II 37, Kraków", str(restored["LOCATION"]))
+        self.assertEqual("L5 - 143, al. Jana Pawła II 39a, Kraków", str(restored["LOCATION"]))
 
     def test_display_only_migration_does_not_notify_discord(self):
         new = self.make_event("C", "L5")

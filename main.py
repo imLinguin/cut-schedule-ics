@@ -16,13 +16,22 @@ TIMEZONE = ZoneInfo("Europe/Warsaw")
 TEACHERS_FILE = os.path.join(os.path.dirname(__file__), "data", "teachers.json")
 COMBOS_FILE = os.path.join(os.path.dirname(__file__), "data", "combos.json")
 CAMPUS_ADDRESSES = {
-    "Czyżyny": "al. Jana Pawła II 37, Kraków",
     "Warszawska": "ul. Warszawska 24, Kraków",
+    "Kamienna": "ul. Kamienna 17, Kraków",
+    "Lea": "ul. Lea 114, Kraków",
+}
+# Official CZ-T floor plan: it.pk.edu.pl/wp-content/uploads/2026/09/CZ-T-mapa-972x1500.png
+CZ_T_ROOMS = {"L1", "L2", "L3", "L4", "L5", "P1", "W1", "S1", "SEMINARYJNA"}
+ROOM_NAME_OVERRIDES = {
+    # Match the reader-facing labels in the faculty planner's app.js.
+    ("Warszawska", "114"): "Warszawska 114 - Macintoshe (macOS)",
+    ("Czyżyny", "L2"): "L2 - standardowe komputery (Windows)",
 }
 
 
 def room_name(room: str, rooms: dict) -> str:
-    name = rooms.get(room, {}).get("name")
+    info = rooms.get(room, {})
+    name = ROOM_NAME_OVERRIDES.get((info.get("campus"), room), info.get("name"))
     # Keep the code from the Excel, including aliases such as S1.
     return name if name and name.startswith(room) else f"{room} ({name})" if name else room
 
@@ -32,6 +41,11 @@ def event_location(room: str, rooms: dict) -> str:
         return "Online" if room else ""
     campus = rooms.get(room, {}).get("campus")
     address = CAMPUS_ADDRESSES.get(campus, campus)
+    if campus == "Czyżyny" and room in CZ_T_ROOMS:
+        address = "al. Jana Pawła II 39a, Kraków"
+    elif campus == "Czyżyny" and room == "DS4-SILOWNIA":
+        # csir.pk.edu.pl/silownia-ds-4-feel-the-pain-gym/
+        address = "ul. Skarżyńskiego 9, Kraków"
     label = room_name(room, rooms)
     return f"{label}, {address}" if address else label
 
